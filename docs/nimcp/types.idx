@@ -1,0 +1,42 @@
+nimTitle	types	nimcp/types.html	module src/nimcp/types		0
+nim	jridString	nimcp/types.html#jridString	JsonRpcIdKind.jridString		8
+nim	jridInt	nimcp/types.html#jridInt	JsonRpcIdKind.jridInt		8
+nim	JsonRpcIdKind	nimcp/types.html#JsonRpcIdKind	enum JsonRpcIdKind		8
+nim	JsonRpcId	nimcp/types.html#JsonRpcId	object JsonRpcId		11
+nim	JsonRpcRequest	nimcp/types.html#JsonRpcRequest	object JsonRpcRequest		16
+nim	JsonRpcResponse	nimcp/types.html#JsonRpcResponse	object JsonRpcResponse		22
+nim	JsonRpcNotification	nimcp/types.html#JsonRpcNotification	object JsonRpcNotification		28
+nim	JsonRpcError	nimcp/types.html#JsonRpcError	object JsonRpcError		33
+nim	McpCapabilities	nimcp/types.html#McpCapabilities	object McpCapabilities		39
+nim	McpPromptsCapability	nimcp/types.html#McpPromptsCapability	object McpPromptsCapability		46
+nim	McpResourcesCapability	nimcp/types.html#McpResourcesCapability	object McpResourcesCapability		49
+nim	McpToolsCapability	nimcp/types.html#McpToolsCapability	object McpToolsCapability		53
+nim	McpServerInfo	nimcp/types.html#McpServerInfo	object McpServerInfo		56
+nim	McpClientInfo	nimcp/types.html#McpClientInfo	object McpClientInfo		60
+nim	McpTool	nimcp/types.html#McpTool	object McpTool		65
+nim	McpToolCall	nimcp/types.html#McpToolCall	object McpToolCall		70
+nim	McpToolResult	nimcp/types.html#McpToolResult	object McpToolResult		74
+nim	McpResource	nimcp/types.html#McpResource	object McpResource		79
+nim	McpResourceTemplate	nimcp/types.html#McpResourceTemplate	object McpResourceTemplate		85
+nim	McpResourceContents	nimcp/types.html#McpResourceContents	object McpResourceContents		91
+nim	McpPrompt	nimcp/types.html#McpPrompt	object McpPrompt		97
+nim	McpPromptArgument	nimcp/types.html#McpPromptArgument	object McpPromptArgument		102
+nim	McpPromptMessage	nimcp/types.html#McpPromptMessage	object McpPromptMessage		107
+nim	McpGetPromptResult	nimcp/types.html#McpGetPromptResult	object McpGetPromptResult		111
+nim	TextContent	nimcp/types.html#TextContent	McpContentType.TextContent		116
+nim	ImageContent	nimcp/types.html#ImageContent	McpContentType.ImageContent		116
+nim	ResourceContent	nimcp/types.html#ResourceContent	McpContentType.ResourceContent		116
+nim	McpContentType	nimcp/types.html#McpContentType	enum McpContentType		116
+nim	McpContent	nimcp/types.html#McpContent	object McpContent		121
+nim	User	nimcp/types.html#User	McpRole.User		132
+nim	Assistant	nimcp/types.html#Assistant	McpRole.Assistant		132
+nim	System	nimcp/types.html#System	McpRole.System		132
+nim	McpRole	nimcp/types.html#McpRole	enum McpRole		132
+nim	McpToolHandler	nimcp/types.html#McpToolHandler	type McpToolHandler		138
+nim	McpResourceHandler	nimcp/types.html#McpResourceHandler	type McpResourceHandler		139
+nim	McpPromptHandler	nimcp/types.html#McpPromptHandler	type McpPromptHandler		140
+nim	ParseError	nimcp/types.html#ParseError	const ParseError		144
+nim	InvalidRequest	nimcp/types.html#InvalidRequest	const InvalidRequest		145
+nim	MethodNotFound	nimcp/types.html#MethodNotFound	const MethodNotFound		146
+nim	InvalidParams	nimcp/types.html#InvalidParams	const InvalidParams		147
+nim	InternalError	nimcp/types.html#InternalError	const InternalError		148

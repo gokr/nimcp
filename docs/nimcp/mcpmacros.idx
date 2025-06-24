@@ -1,0 +1,5 @@
+nimTitle	mcpmacros	nimcp/mcpmacros.html	module src/nimcp/mcpmacros		0
+nim	mcpServer	nimcp/mcpmacros.html#mcpServer.t,string,string,untyped	template mcpServer(name: string; version: string; body: untyped): untyped		7
+nim	mcpTool	nimcp/mcpmacros.html#mcpTool.t,string,string,JsonNode,untyped	template mcpTool(name: string; description: string; schema: JsonNode; handler: untyped): untyped		18
+nim	mcpResource	nimcp/mcpmacros.html#mcpResource.t,string,string,string,untyped	template mcpResource(uri: string; name: string; description: string; handler: untyped): untyped		32
+nim	mcpPrompt	nimcp/mcpmacros.html#mcpPrompt.t,string,string,seq[McpPromptArgument],untyped	template mcpPrompt(name: string; description: string; arguments: seq[McpPromptArgument];\n          handler: untyped): untyped		49
