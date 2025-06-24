@@ -10,8 +10,9 @@
 ## Features
 
 - 🚀 **Macro-driven API** - Define servers, tools, resources, and prompts with simple, declarative syntax
-- 📡 **Full MCP Support** - Complete implementation of MCP specification with JSON-RPC 2.0 over stdio
-- ⚡ **Async by Default** - Built on Nim's async system for high performance
+- 📡 **Full MCP Support** - Complete implementation of MCP specification with JSON-RPC 2.0
+- 🌐 **Multiple Transports** - Supports both stdio and HTTP transports (via Mummy web server)
+- ⚡ **High Performance** - Efficient implementation without async overhead
 - 🛠️ **Type Safe** - Leverages Nim's strong type system for reliability
 - 📦 **Minimal Dependencies** - Uses only essential, well-maintained packages
 - 🔧 **Easy Integration** - Works with any MCP-compatible LLM application
@@ -28,25 +29,18 @@ nimble install nimcp
 
 ```nim
 import nimcp
-import json, asyncdispatch
 
 mcpServer("my-server", "1.0.0"):
   
-  # Define a simple tool
-  mcpTool("echo", "Echo back the input", %*{
-    "type": "object",
-    "properties": {
-      "text": {"type": "string", "description": "Text to echo"}
-    },
-    "required": ["text"]
-  }):
-    proc echo_handler(args: JsonNode): Future[string] {.async.} =
-      return "Echo: " & args["text"].getStr()
+  mcpTool:
+    proc echo(text: string): string =
+      ## Echo back the input text
+      return "Echo: " & text
   
-  # Define a resource  
-  mcpResource("info://server", "Server Info", "Server information"):
-    proc info_handler(uri: string): Future[string] {.async.} =
-      return "This server is built with NimCP!"
+  mcpTool:
+    proc add(a: float, b: float): string =
+      ## Add two numbers together
+      return $fmt"Result: {a + b}"
 ```
 
 That's it! Your MCP server is ready to run.
@@ -58,14 +52,9 @@ That's it! Your MCP server is ready to run.
 Tools are functions that LLM applications can call. Define them with the `mcpTool` macro:
 
 ```nim
-mcpTool("calculate", "Perform calculations", %*{
-  "type": "object",
-  "properties": {
-    "expression": {"type": "string", "description": "Math expression to evaluate"}
-  },
-  "required": ["expression"]
-}):
-  proc calculator(args: JsonNode): Future[string] {.async.} =
+mcpTool:
+  proc calculate(expression: string): string =
+    ## Perform mathematical calculations
     # Your calculation logic here
     return "Result: 42"
 ```
@@ -76,7 +65,7 @@ Resources provide data that can be read by LLM applications:
 
 ```nim
 mcpResource("data://config", "Configuration", "Application configuration"):
-  proc get_config(uri: string): Future[string] {.async.} =
+  proc get_config(uri: string): string =
     return readFile("config.json")
 ```
 
@@ -89,7 +78,7 @@ mcpPrompt("code_review", "Code review prompt", @[
   McpPromptArgument(name: "language", description: some("Programming language")),
   McpPromptArgument(name: "code", description: some("Code to review"))
 ]):
-  proc review_prompt(name: string, args: Table[string, JsonNode]): Future[seq[McpPromptMessage]] {.async.} =
+  proc review_prompt(name: string, args: Table[string, JsonNode]): seq[McpPromptMessage] =
     let language = args.getOrDefault("language", %"unknown").getStr()
     let code = args.getOrDefault("code", %"").getStr()
     
@@ -123,13 +112,13 @@ let tool = McpTool(
   inputSchema: %*{"type": "object"}
 )
 
-proc customHandler(args: JsonNode): Future[McpToolResult] {.async.} =
+proc customHandler(args: JsonNode): McpToolResult =
   return McpToolResult(content: @[createTextContent("Custom result")])
 
 server.registerTool(tool, customHandler)
 
 # Run the server
-waitFor server.runStdio()
+server.runStdio()
 ```
 
 ### Error Handling
@@ -137,10 +126,11 @@ waitFor server.runStdio()
 NimCP automatically handles JSON-RPC errors, but you can throw exceptions in your handlers:
 
 ```nim
-mcpTool("validate", "Validate input", schema):
-  proc validator(args: JsonNode): Future[string] {.async.} =
-    if not args.hasKey("data"):
-      raise newException(ValueError, "Missing 'data' parameter")
+mcpTool:
+  proc validate(data: string): string =
+    ## Validate input data
+    if data.len == 0:
+      raise newException(ValueError, "Empty data parameter")
     return "Valid!"
 ```
 
@@ -148,8 +138,13 @@ mcpTool("validate", "Validate input", schema):
 
 Check out the `examples/` directory for complete examples:
 
-- [`simple_server.nim`](examples/simple_server.nim) - Basic server with echo and time tools
-- [`calculator_server.nim`](examples/calculator_server.nim) - Calculator with multiple tools and resources
+- [`simple_server.nim`](examples/simple_server.nim) - Basic server with echo and time tools (stdio)
+- [`calculator_server.nim`](examples/calculator_server.nim) - Calculator with multiple tools and resources (manual API, stdio)
+- [`macro_calculator.nim`](examples/macro_calculator.nim) - Calculator using macro API with automatic introspection (stdio)
+- [`macro_mummy_calculator.nim`](examples/macro_mummy_calculator.nim) - Calculator using macro API over HTTP transport
+- [`mummy_calculator.nim`](examples/mummy_calculator.nim) - Calculator using manual API over HTTP transport
+
+See the [examples README](examples/README.md) for detailed explanations of the differences between examples.
 
 Just from command line you can test and list tools with for example:
 ```bash
