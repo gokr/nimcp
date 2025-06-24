@@ -5,7 +5,7 @@
 
 **NimCP** is a macro-based library for creating [Model Context Protocol (MCP)](https://modelcontextprotocol.io) servers in Nim. It leverages Nim's excellent macro system to provide an incredibly easy-to-use API for building MCP servers that integrate seamlessly with LLM applications.
 
-**NOTE: 99.9% of this library was written using Claude Code "vibe coding"!**
+**NOTE: 99.9% of this library was written using Claude Code "vibe coding"**
 
 ## Features
 
@@ -184,16 +184,15 @@ Example usage in Claude Code:
   - "What's 12 raised to the power of 3?"
   - "Show me the mathematical constants"
 
-Alternative manual configuration:
-
-If the CLI method doesn't work, you can manually edit your MCP configuration file (usually at ~/.config/claude-code/mcp.json):
+If the CLI method doesn't work, you can manually edit your MCP configuration file (usually at ~/.claude.json). Just **change the path** to what you have:
 
     {
       "mcpServers": {
         "calculator_server": {
-          "command": "/home/gokr/tankfeud/mcp/examples/calculator_server_fixed",
+          "type": "stdio",
+          "command": "/path/to/examples/calculator_server",
           "args": [],
-          "transport": "stdio"
+          "env": {}
         }
       }
     }
