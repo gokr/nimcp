@@ -1,8 +1,0 @@
-nimTitle	server	nimcp/server.html	module src/nimcp/server		0
-nim	McpServer	nimcp/server.html#McpServer	type McpServer		8
-nim	newMcpServer	nimcp/server.html#newMcpServer,string,string	proc newMcpServer(name: string; version: string): McpServer		19
-nim	registerTool	nimcp/server.html#registerTool,McpServer,McpTool,McpToolHandler	proc registerTool(server: McpServer; tool: McpTool; handler: McpToolHandler)		33
-nim	registerResource	nimcp/server.html#registerResource,McpServer,McpResource,McpResourceHandler	proc registerResource(server: McpServer; resource: McpResource;\n                 handler: McpResourceHandler)		42
-nim	registerPrompt	nimcp/server.html#registerPrompt,McpServer,McpPrompt,McpPromptHandler	proc registerPrompt(server: McpServer; prompt: McpPrompt; handler: McpPromptHandler)		51
-nim	handleRequest	nimcp/server.html#handleRequest,McpServer,JsonRpcRequest	proc handleRequest(server: McpServer; request: JsonRpcRequest): Future[\n    JsonRpcResponse]		119
-nim	runStdio	nimcp/server.html#runStdio,McpServer	proc runStdio(server: McpServer): owned(Future[void])		153

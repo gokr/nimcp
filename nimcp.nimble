@@ -18,4 +18,4 @@ task test, "Run tests":
   exec "nim c -r tests/test_calculator_server.nim"
 
 task docs, "Generate documentation":
-  exec "nim doc --project --index:on --git.url:https://github.com/nim-lang/nimcp --git.commit:main --outdir:docs src/nimcp.nim"
+  exec "nim doc --project --index:on --git.url:https://github.com/gokr/nimcp --git.commit:main --outdir:docs src/nimcp.nim"

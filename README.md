@@ -153,11 +153,11 @@ If you are using Claude Code, this is how you can try it:
 
 1. Add the MCP server to Claude Code:
 
-  claude mcp add calculator_server --transport stdio /home/gokr/tankfeud/mcp/examples/calculator_server_fixed
+    claude mcp add calculator_server --transport stdio /home/gokr/tankfeud/mcp/examples/calculator_server_fixed
 
 2. Verify it was added:
 
-  claude mcp list
+    claude mcp list
 
 3. Test the server from within Claude Code:
 
@@ -178,15 +178,15 @@ Alternative manual configuration:
 
 If the CLI method doesn't work, you can manually edit your MCP configuration file (usually at ~/.config/claude-code/mcp.json):
 
-{
-  "mcpServers": {
-    "calculator_server": {
-      "command": "/home/gokr/tankfeud/mcp/examples/calculator_server_fixed",
-      "args": [],
-      "transport": "stdio"
+    {
+      "mcpServers": {
+        "calculator_server": {
+          "command": "/home/gokr/tankfeud/mcp/examples/calculator_server_fixed",
+          "args": [],
+          "transport": "stdio"
+        }
+      }
     }
-  }
-}
 
 ## Testing
 
