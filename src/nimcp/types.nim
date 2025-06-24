@@ -73,7 +73,6 @@ type
 
   McpToolResult* = object
     content*: seq[McpContent]
-    isError*: Option[bool]
 
   # Resource types
   McpResource* = object

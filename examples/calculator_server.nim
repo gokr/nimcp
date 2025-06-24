@@ -22,7 +22,7 @@ let addTool = McpTool(
 proc addHandler(args: JsonNode): Future[McpToolResult] {.async.} =
   let a = args["a"].getFloat()
   let b = args["b"].getFloat()
-  return McpToolResult(content: @[createTextContent($(a + b))], isError: some(false))
+  return McpToolResult(content: @[createTextContent($(a + b))])
 
 server.registerTool(addTool, addHandler)
 
@@ -43,7 +43,7 @@ let multiplyTool = McpTool(
 proc multiplyHandler(args: JsonNode): Future[McpToolResult] {.async.} =
   let a = args["a"].getFloat()
   let b = args["b"].getFloat()
-  return McpToolResult(content: @[createTextContent($(a * b))], isError: some(false))
+  return McpToolResult(content: @[createTextContent($(a * b))])
 
 server.registerTool(multiplyTool, multiplyHandler)
 
@@ -64,7 +64,7 @@ let powerTool = McpTool(
 proc powerHandler(args: JsonNode): Future[McpToolResult] {.async.} =
   let base = args["base"].getFloat()
   let exponent = args["exponent"].getFloat()
-  return McpToolResult(content: @[createTextContent($pow(base, exponent))], isError: some(false))
+  return McpToolResult(content: @[createTextContent($pow(base, exponent))])
 
 server.registerTool(powerTool, powerHandler)
 

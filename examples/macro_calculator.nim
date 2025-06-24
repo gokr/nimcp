@@ -46,7 +46,7 @@ mcpServer("macro-calculator", "1.0.0"):
         else:
           return "Second number is greater"
   
-  # Tool with string parameter
+  # Tool with int parameter
   mcpTool:
     proc factorial(n: int): Future[string] {.async.} =
       ## Calculate factorial of a number
