@@ -45,11 +45,13 @@ nimble build         # Build the package
 
 ### Two API Styles
 
-**Macro-based API** (recommended for simplicity):
+**Macro API** (automatic introspection, recommended):
 ```nim
 mcpServer("name", "1.0.0"):
-  mcpTool("tool_name", "description", schema):
-    proc handler(args: JsonNode): Future[string] {.async.} = ...
+  mcpTool:
+    proc add(a: float, b: float): Future[string] {.async.} =
+      ## Add two numbers together
+      return fmt"Result: {a + b}"
 ```
 
 **Manual API** (for advanced control):
@@ -76,9 +78,16 @@ All MCP servers communicate via JSON-RPC 2.0 over stdin/stdout. The server handl
 ## Dependencies
 - nim >= 2.0.0
 - json_serialization (JSON handling)
-- chronos (async runtime)
-- stew (utilities)
 
 ## Examples
 - `examples/simple_server.nim` - Basic echo and time tools with info resource
-- `examples/calculator_server.nim` - More complex calculator with multiple tools
+- `examples/calculator_server.nim` - More complex calculator with multiple tools (manual API)
+- `examples/macro_calculator.nim` - Calculator using macro API with automatic introspection
+
+## Macro API Features
+The macro API automatically extracts:
+- **Tool names** from proc names
+- **Descriptions** from doc comments (first line)
+- **JSON schemas** from parameter types (int, float, string, bool, seq)
+- **Parameter documentation** from doc comment parameter lists
+- **Type-safe wrappers** for JSON parameter conversion

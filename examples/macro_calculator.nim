@@ -1,90 +1,62 @@
-## Macro-based calculator MCP server example
-## This demonstrates the high-level macro API for creating MCP servers
+## Macro-based calculator example
+## Demonstrates automatic tool generation from proc signatures
 
-import ../src/nimcp
-import json, math, strformat, options, asyncdispatch
+import ../src/nimcp/mcpmacros
+import json, math, strformat, asyncdispatch
 
-# Create server using macro API
-let server = newMcpServer("macro-calculator", "1.0.0")
-
-# Add tools using direct API (simpler for now)
-let addTool = McpTool(
-  name: "add",
-  description: some("Add two numbers"),
-  inputSchema: %*{
-    "type": "object",
-    "properties": {
-      "a": {"type": "number", "description": "First number"},
-      "b": {"type": "number", "description": "Second number"}
-    },
-    "required": ["a", "b"]
-  }
-)
-
-server.registerTool(addTool, proc(args: JsonNode): Future[McpToolResult] {.async.} =
-  let a = args["a"].getFloat()
-  let b = args["b"].getFloat()
-  return McpToolResult(content: @[createTextContent(fmt"Result: {a + b}")])
-)
-
-let multiplyTool = McpTool(
-  name: "multiply", 
-  description: some("Multiply two numbers"),
-  inputSchema: %*{
-    "type": "object",
-    "properties": {
-      "a": {"type": "number", "description": "First number"},
-      "b": {"type": "number", "description": "Second number"}
-    },
-    "required": ["a", "b"]
-  }
-)
-
-server.registerTool(multiplyTool, proc(args: JsonNode): Future[McpToolResult] {.async.} =
-  let a = args["a"].getFloat()
-  let b = args["b"].getFloat()
-  return McpToolResult(content: @[createTextContent(fmt"Result: {a * b}")])
-)
-
-let powerTool = McpTool(
-  name: "power",
-  description: some("Calculate a raised to the power of b"),
-  inputSchema: %*{
-    "type": "object",
-    "properties": {
-      "base": {"type": "number", "description": "Base number"},
-      "exponent": {"type": "number", "description": "Exponent"}
-    },
-    "required": ["base", "exponent"]
-  }
-)
-
-server.registerTool(powerTool, proc(args: JsonNode): Future[McpToolResult] {.async.} =
-  let base = args["base"].getFloat()
-  let exp = args["exponent"].getFloat()
-  return McpToolResult(content: @[createTextContent(fmt"Result: {pow(base, exp)}")])
-)
-
-# Add a resource
-let mathResource = McpResource(
-  uri: "math://constants",
-  name: "constants", 
-  description: some("Mathematical constants")
-)
-
-server.registerResource(mathResource, proc(uri: string): Future[McpResourceContents] {.async.} =
-  return McpResourceContents(
-    uri: uri,
-    content: @[createTextContent("""
-Math Constants:
-- π (pi) ≈ 3.14159
-- e (Euler's number) ≈ 2.71828
-- φ (golden ratio) ≈ 1.61803
-- √2 ≈ 1.41421
-""")]
-  )
-)
-
-# Run server
-when isMainModule:
-  waitFor server.runStdio()
+mcpServer("macro-calculator", "1.0.0"):
+  
+  # This proc will be automatically converted to an MCP tool
+  # Tool name: "add", schema generated from parameters, description from doc comment
+  mcpTool:
+    proc add(a: float, b: float): Future[string] {.async.} =
+      ## Add two numbers together
+      ## - a: First number to add
+      ## - b: Second number to add
+      return fmt"Result: {a + b}"
+  
+  # Another tool with different parameter types
+  mcpTool:
+    proc multiply(x: int, y: int): Future[string] {.async.} =
+      ## Multiply two integers
+      ## - x: First integer
+      ## - y: Second integer  
+      return fmt"Result: {x * y}"
+  
+  # Tool with boolean parameter
+  mcpTool:
+    proc compare(num1: float, num2: float, strict: bool): Future[string] {.async.} =
+      ## Compare two numbers
+      ## - num1: First number
+      ## - num2: Second number
+      ## - strict: Whether to use strict comparison
+      if strict:
+        if num1 == num2:
+          return "Numbers are exactly equal"
+        elif num1 > num2:
+          return "First number is greater"
+        else:
+          return "Second number is greater"
+      else:
+        let diff = abs(num1 - num2)
+        if diff < 0.001:
+          return "Numbers are approximately equal"
+        elif num1 > num2:
+          return "First number is greater"
+        else:
+          return "Second number is greater"
+  
+  # Tool with string parameter
+  mcpTool:
+    proc factorial(n: int): Future[string] {.async.} =
+      ## Calculate factorial of a number
+      ## - n: Number to calculate factorial for
+      if n < 0:
+        return "Error: Factorial not defined for negative numbers"
+      elif n == 0 or n == 1:
+        return "Result: 1"
+      else:
+        var result = 1
+        for i in 2..n:
+          result *= i
+        return fmt"Result: {result}"
