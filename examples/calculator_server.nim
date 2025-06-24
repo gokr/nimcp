@@ -1,5 +1,4 @@
-## Working Calculator MCP Server
-## Fixed version of calculator_server.nim using manual API instead of broken macros
+## Calculator MCP Server using manual API
 
 import ../src/nimcp
 import json, asyncdispatch, math, strutils, options

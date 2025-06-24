@@ -1,5 +1,4 @@
 ## Simple MCP Server Example
-## Shows basic usage of nimcp
 
 import ../src/nimcp
 import json, asyncdispatch, times, options
