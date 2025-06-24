@@ -2,3 +2,5 @@ docs
 tests/test_simple_server
 tests/test_basic
 tests/test_calculator_server
+examples/calculator_server
+examples/simple_server
