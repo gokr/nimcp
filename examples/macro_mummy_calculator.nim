@@ -1,10 +1,10 @@
-## Macro-based calculator example
-## Demonstrates automatic tool generation from proc signatures
+## Macro-based Mummy HTTP calculator example
+## Demonstrates automatic tool generation with HTTP transport
 
-import ../src/nimcp/mcpmacros
+import ../src/nimcp/mcpmacros, ../src/nimcp/mummy_transport
 import json, math, strformat
 
-mcpServer("macro-calculator", "1.0.0"):
+mcpServer("macro-mummy-calculator", "1.0.0"):
   
   # This proc will be automatically converted to an MCP tool
   # Tool name: "add", schema generated from parameters, description from doc comment
@@ -62,4 +62,18 @@ mcpServer("macro-calculator", "1.0.0"):
         return fmt"Result: {res}"
 
 when isMainModule:
-  runServer()
+  echo "Starting Macro Mummy Calculator MCP Server..."
+  echo "This server uses macros for automatic tool generation and HTTP transport"
+  echo ""
+  echo "Test with curl:"
+  echo """curl -X POST http://127.0.0.1:8080 \"""
+  echo """  -H "Content-Type: application/json" \"""
+  echo """  -d '{"jsonrpc":"2.0","id":"1","method":"tools/list","params":{}}'"""
+  echo ""
+  echo """curl -X POST http://127.0.0.1:8080 \"""
+  echo """  -H "Content-Type: application/json" \"""
+  echo """  -d '{"jsonrpc":"2.0","id":"2","method":"tools/call","params":{"name":"add","arguments":{"a":5.5,"b":3.2}}}'"""
+  echo ""
+  
+  # Use the HTTP transport with the macro-generated server
+  currentMcpServer.runHttp(8080, "127.0.0.1")

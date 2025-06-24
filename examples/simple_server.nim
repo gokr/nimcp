@@ -1,7 +1,7 @@
 ## Simple MCP Server Example
 
 import ../src/nimcp
-import json, asyncdispatch, times, options
+import json, times, options
 
 let server = newMcpServer("example", "1.0.0")
 
@@ -18,7 +18,7 @@ let echoTool = McpTool(
   }
 )
 
-proc echoHandler(args: JsonNode): Future[McpToolResult] {.async.} =
+proc echoHandler(args: JsonNode): McpToolResult =
   let text = args["text"].getStr()
   return McpToolResult(content: @[createTextContent("Echo: " & text)])
 
@@ -34,7 +34,7 @@ let timeTool = McpTool(
   }
 )
 
-proc timeHandler(args: JsonNode): Future[McpToolResult] {.async.} =
+proc timeHandler(args: JsonNode): McpToolResult =
   return McpToolResult(content: @[createTextContent("Current time: " & $now())])
 
 server.registerTool(timeTool, timeHandler)
@@ -46,7 +46,7 @@ let infoResource = McpResource(
   description: some("Information about this server")
 )
 
-proc infoHandler(uri: string): Future[McpResourceContents] {.async.} =
+proc infoHandler(uri: string): McpResourceContents =
   return McpResourceContents(
     uri: uri,
     content: @[createTextContent("This is a simple MCP server built with nimcp!")]
@@ -56,4 +56,4 @@ server.registerResource(infoResource, infoHandler)
 
 # Run the server
 when isMainModule:
-  waitFor server.runStdio()
+  server.runStdio()

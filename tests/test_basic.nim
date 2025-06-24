@@ -1,6 +1,6 @@
 ## Basic tests for nimcp
 
-import unittest, json, asyncdispatch, options, tables
+import unittest, json, options, tables
 import ../src/nimcp
 
 suite "Basic MCP Server Tests":
@@ -20,7 +20,7 @@ suite "Basic MCP Server Tests":
       inputSchema: %*{"type": "object"}
     )
     
-    proc testHandler(args: JsonNode): Future[McpToolResult] {.async.} =
+    proc testHandler(args: JsonNode): McpToolResult =
       return McpToolResult(
         content: @[createTextContent("test result")]
       )

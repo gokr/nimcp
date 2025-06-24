@@ -1,7 +1,7 @@
 ## Tests for the simple_server example
 ## Verifies that the simple_server implements MCP protocol correctly
 
-import unittest, json, asyncdispatch, options, times, strutils
+import unittest, json, options, times, strutils
 import ../src/nimcp
 
 suite "Simple Server Tests":
@@ -23,7 +23,7 @@ suite "Simple Server Tests":
       })
     )
     
-    let response = waitFor server.handleRequest(initRequest)
+    let response = server.handleRequest(initRequest)
     check response.error.isNone
     check server.initialized
   
@@ -43,7 +43,7 @@ suite "Simple Server Tests":
       }
     )
     
-    proc echoHandler(args: JsonNode): Future[McpToolResult] {.async.} =
+    proc echoHandler(args: JsonNode): McpToolResult =
       let text = args["text"].getStr()
       return McpToolResult(content: @[createTextContent("Echo: " & text)])
     
@@ -59,7 +59,7 @@ suite "Simple Server Tests":
         "capabilities": {"tools": {}}
       })
     )
-    discard waitFor server.handleRequest(initRequest)
+    discard server.handleRequest(initRequest)
     
     # Test tools/list
     let listRequest = JsonRpcRequest(
@@ -69,7 +69,7 @@ suite "Simple Server Tests":
       params: none(JsonNode)
     )
     
-    let listResponse = waitFor server.handleRequest(listRequest)
+    let listResponse = server.handleRequest(listRequest)
     check listResponse.error.isNone
     check listResponse.result.isSome
     let tools = listResponse.result.get()["tools"].getElems()
@@ -87,7 +87,7 @@ suite "Simple Server Tests":
       })
     )
     
-    let callResponse = waitFor server.handleRequest(callRequest)
+    let callResponse = server.handleRequest(callRequest)
     check callResponse.error.isNone
     check callResponse.result.isSome
     let content = callResponse.result.get()["content"].getElems()
@@ -107,7 +107,7 @@ suite "Simple Server Tests":
       }
     )
     
-    proc timeHandler(args: JsonNode): Future[McpToolResult] {.async.} =
+    proc timeHandler(args: JsonNode): McpToolResult =
       return McpToolResult(content: @[createTextContent("Current time: " & $now())])
     
     server.registerTool(timeTool, timeHandler)
@@ -122,7 +122,7 @@ suite "Simple Server Tests":
         "capabilities": {"tools": {}}
       })
     )
-    discard waitFor server.handleRequest(initRequest)
+    discard server.handleRequest(initRequest)
     
     # Test tools/call for current_time
     let callRequest = JsonRpcRequest(
@@ -135,7 +135,7 @@ suite "Simple Server Tests":
       })
     )
     
-    let callResponse = waitFor server.handleRequest(callRequest)
+    let callResponse = server.handleRequest(callRequest)
     check callResponse.error.isNone
     check callResponse.result.isSome
     let content = callResponse.result.get()["content"].getElems()
@@ -152,7 +152,7 @@ suite "Simple Server Tests":
       description: some("Information about this server")
     )
     
-    proc infoHandler(uri: string): Future[McpResourceContents] {.async.} =
+    proc infoHandler(uri: string): McpResourceContents =
       return McpResourceContents(
         uri: uri,
         content: @[createTextContent("This is a simple MCP server built with nimcp!")]
@@ -170,7 +170,7 @@ suite "Simple Server Tests":
         "capabilities": {"resources": {}}
       })
     )
-    discard waitFor server.handleRequest(initRequest)
+    discard server.handleRequest(initRequest)
     
     # Test resources/list
     let listRequest = JsonRpcRequest(
@@ -180,7 +180,7 @@ suite "Simple Server Tests":
       params: none(JsonNode)
     )
     
-    let listResponse = waitFor server.handleRequest(listRequest)
+    let listResponse = server.handleRequest(listRequest)
     check listResponse.error.isNone
     check listResponse.result.isSome
     let resources = listResponse.result.get()["resources"].getElems()
@@ -198,7 +198,7 @@ suite "Simple Server Tests":
       })
     )
     
-    let readResponse = waitFor server.handleRequest(readRequest)
+    let readResponse = server.handleRequest(readRequest)
     check readResponse.error.isNone
     check readResponse.result.isSome
     check readResponse.result.get()["uri"].getStr() == "info://server"

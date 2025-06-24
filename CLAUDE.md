@@ -20,7 +20,9 @@ nim c -r tests/test_calculator_server.nim # Run calculator server tests
 ```bash
 nim c examples/simple_server.nim      # Compile simple server example
 nim c examples/calculator_server.nim  # Compile calculator example
+nim c examples/simple_http_calculator.nim # Compile simple HTTP calculator
 nim c -r examples/simple_server.nim   # Compile and run simple server
+nim c -r examples/simple_http_calculator.nim # Compile and run HTTP server
 ```
 
 ### Documentation
@@ -58,7 +60,7 @@ mcpServer("name", "1.0.0"):
 ```nim
 let server = newMcpServer("name", "1.0.0")
 server.registerTool(tool, handler)
-await server.runStdio()
+await server.runStdio()  # Stdio transport
 ```
 
 ### Key Types
@@ -69,20 +71,30 @@ await server.runStdio()
 - `McpToolResult`, `McpResourceContents` - Response types
 
 ### Protocol Flow
-All MCP servers communicate via JSON-RPC 2.0 over stdin/stdout. The server handles:
+MCP servers communicate via JSON-RPC 2.0 over stdio transport:
+
+**Stdio Transport**:
+- Communication over stdin/stdout
+- Suitable for CLI integration and process spawning
+- Primary transport for MCP specification
+
+The server handles:
 - Tool calls with JSON schema validation
 - Resource access by URI
 - Prompt template rendering
 - Server capability negotiation
+
+**HTTP Example**: See `examples/simple_http_calculator.nim` for a demonstration of HTTP transport using Mummy web server with JSON-RPC 2.0 over HTTP.
 
 ## Dependencies
 - nim >= 2.0.0
 - json_serialization (JSON handling)
 
 ## Examples
-- `examples/simple_server.nim` - Basic echo and time tools with info resource
-- `examples/calculator_server.nim` - More complex calculator with multiple tools (manual API)
-- `examples/macro_calculator.nim` - Calculator using macro API with automatic introspection
+- `examples/simple_server.nim` - Basic echo and time tools with info resource (stdio)
+- `examples/calculator_server.nim` - More complex calculator with multiple tools (manual API, stdio)
+- `examples/macro_calculator.nim` - Calculator using macro API with automatic introspection (stdio)
+- `examples/simple_http_calculator.nim` - HTTP-based calculator server with JSON-RPC over HTTP
 
 ## Macro API Features
 The macro API automatically extracts:
@@ -91,3 +103,7 @@ The macro API automatically extracts:
 - **JSON schemas** from parameter types (int, float, string, bool, seq)
 - **Parameter documentation** from doc comment parameter lists
 - **Type-safe wrappers** for JSON parameter conversion
+
+## Coding Guidelines
+- **Variable Naming**:
+  * Do not introduce a local variable called "result" since Nim has such a variable already defined that represents the return value

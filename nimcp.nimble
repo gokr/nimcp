@@ -8,6 +8,7 @@ srcDir        = "src"
 # Dependencies
 requires "nim >= 2.0.0"
 requires "json_serialization"
+requires "mummy"
 
 # Tasks
 task test, "Run tests":

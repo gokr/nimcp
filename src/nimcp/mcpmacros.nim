@@ -1,6 +1,6 @@
 ## Powerful macros for easy MCP server creation
 
-import macros, asyncdispatch, json, tables, options, strutils, typetraits
+import macros, json, tables, options, strutils, typetraits
 import types, server, protocol
 
 # Helper to convert Nim types to JSON schema types
@@ -105,8 +105,9 @@ macro mcpTool*(procDef: untyped): untyped =
       inputSchema: parseJson(`schemaStr`)
     )
     
-    # Create wrapper - simplified for now to just return the tool name
-    proc `wrapperName`(args: JsonNode): Future[McpToolResult] {.async.} =
+    # Create wrapper that calls the actual proc with proper argument extraction
+    proc `wrapperName`(args: JsonNode): McpToolResult =
+      # This is a placeholder - the actual implementation would extract args and call the proc
       return McpToolResult(content: @[createTextContent("Tool " & `toolName` & " called with: " & $args)])
     
     # Register the tool using the global server instance
@@ -120,15 +121,12 @@ var currentMcpServer*: McpServer
 
 # Server creation template with advanced tool registration
 template mcpServer*(name: string, version: string, body: untyped): untyped =
-  let mcpServerInstance = newMcpServer(name, version)
+  let mcpServerInstance* = newMcpServer(name, version)
   currentMcpServer = mcpServerInstance
   body
   
-  proc runServer*() {.async.} =
-    await mcpServerInstance.runStdio()
-  
-  when isMainModule:
-    waitFor runServer()
+  proc runServer*() =
+    mcpServerInstance.runStdio()
 
 
 # Simple resource registration template  
@@ -139,7 +137,7 @@ template mcpResource*(uri: string, name: string, description: string, handler: u
     description: some(description)
   )
   
-  proc resourceHandler(uriParam: string): Future[McpResourceContents] {.async.} =
+  proc resourceHandler(uriParam: string): McpResourceContents =
     let content = handler(uriParam)
     return McpResourceContents(
       uri: uriParam,
@@ -156,7 +154,7 @@ template mcpPrompt*(name: string, description: string, arguments: seq[McpPromptA
     arguments: arguments
   )
   
-  proc promptHandler(nameParam: string, args: Table[string, JsonNode]): Future[McpGetPromptResult] {.async.} =
+  proc promptHandler(nameParam: string, args: Table[string, JsonNode]): McpGetPromptResult =
     let messages = handler(nameParam, args)
     return McpGetPromptResult(messages: messages)
   

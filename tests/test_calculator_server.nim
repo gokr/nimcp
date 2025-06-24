@@ -1,7 +1,7 @@
 ## Tests for the calculator_server example
 ## Identifies issues with the macro-based server and suggests fixes
 
-import unittest, json, asyncdispatch, options, math, strutils
+import unittest, json, options, math, strutils
 import ../src/nimcp
 
 suite "Calculator Server Tests":
@@ -20,7 +20,7 @@ suite "Calculator Server Tests":
         "capabilities": {"tools": {}}
       })
     )
-    discard waitFor server.handleRequest(initRequest)
+    discard server.handleRequest(initRequest)
     
     # Register add tool manually (correct implementation)
     let addTool = McpTool(
@@ -36,7 +36,7 @@ suite "Calculator Server Tests":
       }
     )
     
-    proc addHandler(args: JsonNode): Future[McpToolResult] {.async.} =
+    proc addHandler(args: JsonNode): McpToolResult =
       let a = args["a"].getFloat()
       let b = args["b"].getFloat()
       return McpToolResult(content: @[createTextContent($(a + b))])
@@ -54,7 +54,7 @@ suite "Calculator Server Tests":
       })
     )
     
-    let callResponse = waitFor server.handleRequest(callRequest)
+    let callResponse = server.handleRequest(callRequest)
     check callResponse.error.isNone
     check callResponse.result.isSome
     let content = callResponse.result.get()["content"].getElems()
@@ -74,7 +74,7 @@ suite "Calculator Server Tests":
         "capabilities": {"resources": {}}
       })
     )
-    discard waitFor server.handleRequest(initRequest)
+    discard server.handleRequest(initRequest)
     
     # Register math constants resource
     let constantsResource = McpResource(
@@ -83,7 +83,7 @@ suite "Calculator Server Tests":
       description: some("Common mathematical constants")
     )
     
-    proc constantsHandler(uri: string): Future[McpResourceContents] {.async.} =
+    proc constantsHandler(uri: string): McpResourceContents =
       return McpResourceContents(
         uri: uri,
         content: @[createTextContent("""Mathematical Constants:
@@ -105,7 +105,7 @@ suite "Calculator Server Tests":
       })
     )
     
-    let readResponse = waitFor server.handleRequest(readRequest)
+    let readResponse = server.handleRequest(readRequest)
     check readResponse.error.isNone
     check readResponse.result.isSome
     let content = readResponse.result.get()["content"].getElems()
@@ -125,7 +125,7 @@ suite "Calculator Server Tests":
         "capabilities": {"tools": {}}
       })
     )
-    discard waitFor server.handleRequest(initRequest)
+    discard server.handleRequest(initRequest)
     
     # Register power tool
     let powerTool = McpTool(
@@ -141,7 +141,7 @@ suite "Calculator Server Tests":
       }
     )
     
-    proc powerHandler(args: JsonNode): Future[McpToolResult] {.async.} =
+    proc powerHandler(args: JsonNode): McpToolResult =
       let base = args["base"].getFloat()
       let exponent = args["exponent"].getFloat()
       return McpToolResult(content: @[createTextContent($pow(base, exponent))])
@@ -159,7 +159,7 @@ suite "Calculator Server Tests":
       })
     )
     
-    let callResponse = waitFor server.handleRequest(callRequest)
+    let callResponse = server.handleRequest(callRequest)
     check callResponse.error.isNone
     check callResponse.result.isSome
     let content = callResponse.result.get()["content"].getElems()

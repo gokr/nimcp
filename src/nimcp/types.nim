@@ -1,6 +1,6 @@
 ## Core MCP protocol types and data structures
 
-import json, tables, options, asyncdispatch
+import json, tables, options
 import json_serialization
 
 type
@@ -134,9 +134,9 @@ type
     System = "system"
 
   # Handler function types
-  McpToolHandler* = proc(args: JsonNode): Future[McpToolResult] {.async.}
-  McpResourceHandler* = proc(uri: string): Future[McpResourceContents] {.async.}
-  McpPromptHandler* = proc(name: string, args: Table[string, JsonNode]): Future[McpGetPromptResult] {.async.}
+  McpToolHandler* = proc(args: JsonNode): McpToolResult {.gcsafe, closure.}
+  McpResourceHandler* = proc(uri: string): McpResourceContents {.gcsafe, closure.}
+  McpPromptHandler* = proc(name: string, args: Table[string, JsonNode]): McpGetPromptResult {.gcsafe, closure.}
 
 # Custom JSON serialization for JsonRpcId
 proc `%`*(id: JsonRpcId): JsonNode =

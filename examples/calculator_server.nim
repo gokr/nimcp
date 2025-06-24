@@ -1,7 +1,7 @@
 ## Calculator MCP Server using manual API
 
 import ../src/nimcp
-import json, asyncdispatch, math, strutils, options
+import json, math, options
 
 let server = newMcpServer("calculator", "1.0.0")
 
@@ -19,7 +19,7 @@ let addTool = McpTool(
   }
 )
 
-proc addHandler(args: JsonNode): Future[McpToolResult] {.async.} =
+proc addHandler(args: JsonNode): McpToolResult =
   let a = args["a"].getFloat()
   let b = args["b"].getFloat()
   return McpToolResult(content: @[createTextContent($(a + b))])
@@ -40,7 +40,7 @@ let multiplyTool = McpTool(
   }
 )
 
-proc multiplyHandler(args: JsonNode): Future[McpToolResult] {.async.} =
+proc multiplyHandler(args: JsonNode): McpToolResult =
   let a = args["a"].getFloat()
   let b = args["b"].getFloat()
   return McpToolResult(content: @[createTextContent($(a * b))])
@@ -61,7 +61,7 @@ let powerTool = McpTool(
   }
 )
 
-proc powerHandler(args: JsonNode): Future[McpToolResult] {.async.} =
+proc powerHandler(args: JsonNode): McpToolResult =
   let base = args["base"].getFloat()
   let exponent = args["exponent"].getFloat()
   return McpToolResult(content: @[createTextContent($pow(base, exponent))])
@@ -75,7 +75,7 @@ let constantsResource = McpResource(
   description: some("Common mathematical constants")
 )
 
-proc constantsHandler(uri: string): Future[McpResourceContents] {.async.} =
+proc constantsHandler(uri: string): McpResourceContents =
   return McpResourceContents(
     uri: uri,
     content: @[createTextContent("""Mathematical Constants:
@@ -89,4 +89,4 @@ server.registerResource(constantsResource, constantsHandler)
 
 # Run the server
 when isMainModule:
-  waitFor server.runStdio()
+  server.runStdio()

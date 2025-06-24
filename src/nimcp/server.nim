@@ -1,8 +1,10 @@
 ## MCP Server implementation with stdio transport
 
-import asyncdispatch, json, tables, options, strutils
+import json, tables, options
 import json_serialization
 import types, protocol
+
+{.push warning[GcUnsafe2]:off.}
 
 type
   McpServer* = ref object
@@ -57,17 +59,17 @@ proc registerPrompt*(server: McpServer, prompt: McpPrompt, handler: McpPromptHan
     server.capabilities.prompts = some(McpPromptsCapability())
 
 # Core message handlers
-proc handleInitialize(server: McpServer, params: JsonNode): Future[JsonNode] {.async.} =
+proc handleInitialize(server: McpServer, params: JsonNode): JsonNode {.gcsafe.} =
   server.initialized = true
   return createInitializeResponse(server.serverInfo, server.capabilities)
 
-proc handleToolsList(server: McpServer): Future[JsonNode] {.async.} =
+proc handleToolsList(server: McpServer): JsonNode {.gcsafe.} =
   var tools: seq[McpTool] = @[]
   for tool in server.tools.values:
     tools.add(tool)
   return createToolsListResponse(tools)
 
-proc handleToolsCall(server: McpServer, params: JsonNode): Future[JsonNode] {.async.} =
+proc handleToolsCall(server: McpServer, params: JsonNode): JsonNode {.gcsafe.} =
   let toolName = params["name"].getStr()
   let args = if params.hasKey("arguments"): params["arguments"] else: newJObject()
   
@@ -75,32 +77,32 @@ proc handleToolsCall(server: McpServer, params: JsonNode): Future[JsonNode] {.as
     raise newException(ValueError, "Tool not found: " & toolName)
   
   let handler = server.toolHandlers[toolName]
-  let result = await handler(args)
-  return %result
+  let res = handler(args)
+  return parseJson(toJson(res))
 
-proc handleResourcesList(server: McpServer): Future[JsonNode] {.async.} =
+proc handleResourcesList(server: McpServer): JsonNode {.gcsafe.} =
   var resources: seq[McpResource] = @[]
   for resource in server.resources.values:
     resources.add(resource)
   return createResourcesListResponse(resources)
 
-proc handleResourcesRead(server: McpServer, params: JsonNode): Future[JsonNode] {.async.} =
+proc handleResourcesRead(server: McpServer, params: JsonNode): JsonNode {.gcsafe.} =
   let uri = params["uri"].getStr()
   
   if uri notin server.resourceHandlers:
     raise newException(ValueError, "Resource not found: " & uri)
   
   let handler = server.resourceHandlers[uri]
-  let result = await handler(uri)
-  return %result
+  let res = handler(uri)
+  return parseJson(toJson(res))
 
-proc handlePromptsList(server: McpServer): Future[JsonNode] {.async.} =
+proc handlePromptsList(server: McpServer): JsonNode {.gcsafe.} =
   var prompts: seq[McpPrompt] = @[]
   for prompt in server.prompts.values:
     prompts.add(prompt)
   return createPromptsListResponse(prompts)
 
-proc handlePromptsGet(server: McpServer, params: JsonNode): Future[JsonNode] {.async.} =
+proc handlePromptsGet(server: McpServer, params: JsonNode): JsonNode {.gcsafe.} =
   let promptName = params["name"].getStr()
   var args = initTable[string, JsonNode]()
   
@@ -112,11 +114,11 @@ proc handlePromptsGet(server: McpServer, params: JsonNode): Future[JsonNode] {.a
     raise newException(ValueError, "Prompt not found: " & promptName)
   
   let handler = server.promptHandlers[promptName]
-  let result = await handler(promptName, args)
-  return %result
+  let res = handler(promptName, args)
+  return parseJson(toJson(res))
 
 # Notification handler (messages without ID)
-proc handleNotification*(server: McpServer, request: JsonRpcRequest): Future[void] {.async.} =
+proc handleNotification*(server: McpServer, request: JsonRpcRequest) {.gcsafe.} =
   try:
     case request.`method`:
       of "initialized":
@@ -131,34 +133,34 @@ proc handleNotification*(server: McpServer, request: JsonRpcRequest): Future[voi
     discard
 
 # Main message dispatcher
-proc handleRequest*(server: McpServer, request: JsonRpcRequest): Future[JsonRpcResponse] {.async.} =
+proc handleRequest*(server: McpServer, request: JsonRpcRequest): JsonRpcResponse {.gcsafe.} =
   if request.id.isNone:
     # This is a notification - handle it but don't return a response
-    await server.handleNotification(request)
+    server.handleNotification(request)
     return JsonRpcResponse() # Return empty response that won't be sent
   
   let id = request.id.get
   
   try:
-    let result = case request.`method`:
+    let res = case request.`method`:
       of "initialize":
-        await server.handleInitialize(request.params.get(newJObject()))
+        server.handleInitialize(request.params.get(newJObject()))
       of "tools/list":
-        await server.handleToolsList()
+        server.handleToolsList()
       of "tools/call":
-        await server.handleToolsCall(request.params.get(newJObject()))
+        server.handleToolsCall(request.params.get(newJObject()))
       of "resources/list":
-        await server.handleResourcesList()  
+        server.handleResourcesList()  
       of "resources/read":
-        await server.handleResourcesRead(request.params.get(newJObject()))
+        server.handleResourcesRead(request.params.get(newJObject()))
       of "prompts/list":
-        await server.handlePromptsList()
+        server.handlePromptsList()
       of "prompts/get":
-        await server.handlePromptsGet(request.params.get(newJObject()))
+        server.handlePromptsGet(request.params.get(newJObject()))
       else:
         return createJsonRpcError(id, MethodNotFound, "Method not found: " & request.`method`)
     
-    return createJsonRpcResponse(id, result)
+    return createJsonRpcResponse(id, res)
     
   except ValueError as e:
     return createJsonRpcError(id, InvalidParams, e.msg)
@@ -166,7 +168,7 @@ proc handleRequest*(server: McpServer, request: JsonRpcRequest): Future[JsonRpcR
     return createJsonRpcError(id, InternalError, "Internal error: " & e.msg)
 
 # Stdio transport implementation
-proc runStdio*(server: McpServer) {.async.} =
+proc runStdio*(server: McpServer) =
   while true:
     try:
       let line = stdin.readLine()
@@ -178,10 +180,10 @@ proc runStdio*(server: McpServer) {.async.} =
         
         # Check if this is a notification (no ID) - don't send response
         if request.id.isNone:
-          await server.handleNotification(request)
+          server.handleNotification(request)
         else:
           # This is a request - send response
-          let response = await server.handleRequest(request)
+          let response = server.handleRequest(request)
           # Custom JSON serialization to exclude null fields
           var responseJson = newJObject()
           responseJson["jsonrpc"] = %response.jsonrpc
