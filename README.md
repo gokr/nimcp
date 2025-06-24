@@ -152,12 +152,15 @@ Check out the `examples/` directory for complete examples:
 If you are using Claude Code, this is how you can try it:
 
 1. Add the MCP server to Claude Code:
-
-    claude mcp add calculator_server --transport stdio /home/gokr/tankfeud/mcp/examples/calculator_server_fixed
+```bash
+claude mcp add calculator_server --transport stdio /home/gokr/tankfeud/mcp/examples/calculator_server_fixed
+```
 
 2. Verify it was added:
 
-    claude mcp list
+```bash
+claude mcp list
+```
 
 3. Test the server from within Claude Code:
 
