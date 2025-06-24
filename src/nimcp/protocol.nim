@@ -9,8 +9,8 @@ proc createJsonRpcResponse*(id: JsonRpcId, resultData: JsonNode): JsonRpcRespons
   JsonRpcResponse(
     jsonrpc: "2.0",
     id: id,
-    result: some(resultData),
-    error: none(JsonRpcError)
+    result: some(resultData)
+    # Don't set error field for successful responses
   )
 
 proc createJsonRpcError*(id: JsonRpcId, code: int, message: string): JsonRpcResponse =
@@ -22,8 +22,8 @@ proc createJsonRpcError*(id: JsonRpcId, code: int, message: string): JsonRpcResp
   JsonRpcResponse(
     jsonrpc: "2.0", 
     id: id,
-    result: none(JsonNode),
     error: some(error)
+    # Don't set result field for error responses
   )
 
 proc createJsonRpcNotification*(methodName: string): JsonRpcNotification =
@@ -58,12 +58,42 @@ proc parseJsonRpcMessage*(data: string): JsonRpcRequest =
   if parsed.hasKey("params"):
     result.params = some(parsed["params"])
 
+# Helper to create capabilities without null fields
+proc cleanCapabilities*(caps: McpCapabilities): JsonNode =
+  result = newJObject()
+  
+  if caps.tools.isSome:
+    let toolsCap = newJObject()
+    if caps.tools.get.listChanged.isSome:
+      toolsCap["listChanged"] = %caps.tools.get.listChanged.get
+    result["tools"] = toolsCap
+  
+  if caps.resources.isSome:
+    let resourcesCap = newJObject()
+    if caps.resources.get.subscribe.isSome:
+      resourcesCap["subscribe"] = %caps.resources.get.subscribe.get
+    if caps.resources.get.listChanged.isSome:
+      resourcesCap["listChanged"] = %caps.resources.get.listChanged.get
+    result["resources"] = resourcesCap
+  
+  if caps.prompts.isSome:
+    let promptsCap = newJObject()
+    if caps.prompts.get.listChanged.isSome:
+      promptsCap["listChanged"] = %caps.prompts.get.listChanged.get
+    result["prompts"] = promptsCap
+  
+  if caps.logging.isSome:
+    result["logging"] = caps.logging.get
+    
+  if caps.experimental.isSome:
+    result["experimental"] = %caps.experimental.get
+
 # MCP-specific message handling
 proc createInitializeResponse*(serverInfo: McpServerInfo, capabilities: McpCapabilities): JsonNode =
   %*{
     "protocolVersion": "2024-11-05",
     "serverInfo": serverInfo,
-    "capabilities": capabilities
+    "capabilities": cleanCapabilities(capabilities)
   }
 
 proc createToolsListResponse*(tools: seq[McpTool]): JsonNode =

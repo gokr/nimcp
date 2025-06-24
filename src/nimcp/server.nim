@@ -115,11 +115,27 @@ proc handlePromptsGet(server: McpServer, params: JsonNode): Future[JsonNode] {.a
   let result = await handler(promptName, args)
   return %result
 
+# Notification handler (messages without ID)
+proc handleNotification*(server: McpServer, request: JsonRpcRequest): Future[void] {.async.} =
+  try:
+    case request.`method`:
+      of "initialized":
+        # Client confirms initialization is complete
+        # Nothing to do - just acknowledge internally
+        discard
+      else:
+        # Unknown notification - ignore silently per JSON-RPC 2.0 spec
+        discard
+  except Exception:
+    # Notifications should not generate error responses
+    discard
+
 # Main message dispatcher
 proc handleRequest*(server: McpServer, request: JsonRpcRequest): Future[JsonRpcResponse] {.async.} =
   if request.id.isNone:
-    # This should be a notification, not a request
-    return createJsonRpcError(JsonRpcId(kind: jridString, str: ""), InvalidRequest, "Request missing ID")
+    # This is a notification - handle it but don't return a response
+    await server.handleNotification(request)
+    return JsonRpcResponse() # Return empty response that won't be sent
   
   let id = request.id.get
   
@@ -159,12 +175,27 @@ proc runStdio*(server: McpServer) {.async.} =
       
       try:
         let request = parseJsonRpcMessage(line)
-        let response = await server.handleRequest(request)
-        let responseJson = %response
-        echo $responseJson
+        
+        # Check if this is a notification (no ID) - don't send response
+        if request.id.isNone:
+          await server.handleNotification(request)
+        else:
+          # This is a request - send response
+          let response = await server.handleRequest(request)
+          # Custom JSON serialization to exclude null fields
+          var responseJson = newJObject()
+          responseJson["jsonrpc"] = %response.jsonrpc
+          responseJson["id"] = %response.id
+          if response.result.isSome:
+            responseJson["result"] = response.result.get
+          if response.error.isSome:
+            responseJson["error"] = %response.error.get
+          echo $responseJson
+          stdout.flushFile()
       except Exception as e:
         let errorResponse = createJsonRpcError(JsonRpcId(kind: jridString, str: ""), ParseError, "Parse error: " & e.msg)
         echo $(%errorResponse)
+        stdout.flushFile()
     except EOFError:
       # Input stream ended, exit gracefully
       break

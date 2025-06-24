@@ -139,6 +139,23 @@ type
   McpResourceHandler* = proc(uri: string): Future[McpResourceContents] {.async.}
   McpPromptHandler* = proc(name: string, args: Table[string, JsonNode]): Future[McpGetPromptResult] {.async.}
 
+# Custom JSON serialization for JsonRpcId
+proc `%`*(id: JsonRpcId): JsonNode =
+  case id.kind
+  of jridString:
+    return %id.str
+  of jridInt:
+    return %id.num
+
+proc to*(node: JsonNode, T: typedesc[JsonRpcId]): JsonRpcId =
+  case node.kind
+  of JString:
+    return JsonRpcId(kind: jridString, str: node.getStr())
+  of JInt:
+    return JsonRpcId(kind: jridInt, num: node.getInt())
+  else:
+    raise newException(ValueError, "Invalid JsonRpcId format")
+
 # JSON-RPC error codes
 const
   ParseError* = -32700

@@ -3,7 +3,9 @@
 ![Nim](https://img.shields.io/badge/nim-2.0+-blue.svg)
 ![License](https://img.shields.io/badge/license-MIT-green.svg)
 
-**NimCP** is a powerful, macro-based library for creating [Model Context Protocol (MCP)](https://modelcontextprotocol.io) servers in Nim. It leverages Nim's excellent macro system to provide an incredibly easy-to-use API for building MCP servers that integrate seamlessly with LLM applications.
+**NimCP** is a macro-based library for creating [Model Context Protocol (MCP)](https://modelcontextprotocol.io) servers in Nim. It leverages Nim's excellent macro system to provide an incredibly easy-to-use API for building MCP servers that integrate seamlessly with LLM applications.
+
+**NOTE: 99.9% of this library was written using Claude Code "vibe coding"!**
 
 ## Features
 
@@ -149,11 +151,16 @@ Check out the `examples/` directory for complete examples:
 - [`simple_server.nim`](examples/simple_server.nim) - Basic server with echo and time tools
 - [`calculator_server.nim`](examples/calculator_server.nim) - Calculator with multiple tools and resources
 
-If you are using Claude Code, this is how you can try it:
+Just from command line you can test and list tools with for example:
+```bash
+echo '{"jsonrpc": "2.0", "id": 1, "method": "tools/list"}' | ./examples/calculator_server
+```
+
+If you are using Claude Code, this is how you can add it as an MCP server:
 
 1. Add the MCP server to Claude Code:
 ```bash
-claude mcp add calculator_server --transport stdio /home/gokr/tankfeud/mcp/examples/calculator_server_fixed
+claude mcp add calculator_server --transport stdio $PWD/examples/calculator_server
 ```
 
 2. Verify it was added:
