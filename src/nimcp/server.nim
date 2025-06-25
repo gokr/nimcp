@@ -1,6 +1,6 @@
 ## MCP Server implementation with stdio transport
 
-import json, tables, options
+import json, tables, options, locks
 import json_serialization
 import types, protocol
 
@@ -167,40 +167,69 @@ proc handleRequest*(server: McpServer, request: JsonRpcRequest): JsonRpcResponse
   except Exception as e:
     return createJsonRpcError(id, InternalError, "Internal error: " & e.msg)
 
-# Stdio transport implementation
+# Thread-safe output handling
+var stdoutLock: Lock
+initLock(stdoutLock)
+
+proc safeEcho(msg: string) =
+  withLock stdoutLock:
+    echo msg
+    stdout.flushFile()
+
+# Thread data for request processing
+type
+  RequestThread* = Thread[tuple[server: McpServer, line: string]]
+
+proc processRequestThread(data: tuple[server: McpServer, line: string]) {.thread.} =
+  let (server, requestLine) = data
+  try:
+    let request = parseJsonRpcMessage(requestLine)
+    
+    # Check if this is a notification (no ID) - don't send response
+    if request.id.isNone:
+      server.handleNotification(request)
+    else:
+      # This is a request - send response
+      let response = server.handleRequest(request)
+      # Custom JSON serialization to exclude null fields
+      var responseJson = newJObject()
+      responseJson["jsonrpc"] = %response.jsonrpc
+      responseJson["id"] = %response.id
+      if response.result.isSome:
+        responseJson["result"] = response.result.get
+      if response.error.isSome:
+        responseJson["error"] = %response.error.get
+      safeEcho($responseJson)
+  except Exception as e:
+    let errorResponse = createJsonRpcError(JsonRpcId(kind: jridString, str: ""), ParseError, "Parse error: " & e.msg)
+    safeEcho($(%errorResponse))
+
+# Stdio transport implementation with concurrent request handling
 proc runStdio*(server: McpServer) =
+  var threads: seq[RequestThread] = @[]
+  
   while true:
     try:
       let line = stdin.readLine()
       if line.len == 0:
         break
       
-      try:
-        let request = parseJsonRpcMessage(line)
-        
-        # Check if this is a notification (no ID) - don't send response
-        if request.id.isNone:
-          server.handleNotification(request)
-        else:
-          # This is a request - send response
-          let response = server.handleRequest(request)
-          # Custom JSON serialization to exclude null fields
-          var responseJson = newJObject()
-          responseJson["jsonrpc"] = %response.jsonrpc
-          responseJson["id"] = %response.id
-          if response.result.isSome:
-            responseJson["result"] = response.result.get
-          if response.error.isSome:
-            responseJson["error"] = %response.error.get
-          echo $responseJson
-          stdout.flushFile()
-      except Exception as e:
-        let errorResponse = createJsonRpcError(JsonRpcId(kind: jridString, str: ""), ParseError, "Parse error: " & e.msg)
-        echo $(%errorResponse)
-        stdout.flushFile()
+      # Create and start a new thread for this request
+      var thread: RequestThread
+      createThread(thread, processRequestThread, (server, line))
+      threads.add(thread)
+      
     except EOFError:
-      # Input stream ended, exit gracefully
+      # Input stream ended, wait for all threads to complete
+      for thread in threads:
+        joinThread(thread)
       break
     except Exception:
       # Other exceptions while reading input
+      for thread in threads:
+        joinThread(thread)
       break
+  
+  # Wait for any remaining threads to complete
+  for thread in threads:
+    joinThread(thread)

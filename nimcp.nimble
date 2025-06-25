@@ -15,6 +15,7 @@ task test, "Run tests":
   exec "nim c -r tests/test_basic.nim"
   exec "nim c -r tests/test_simple_server.nim"
   exec "nim c -r tests/test_calculator_server.nim"
+  exec "nim c -r tests/test_concurrent_stdio.nim"
 
 task docs, "Generate documentation":
   exec "nim doc --project --index:on --git.url:https://github.com/gokr/nimcp --git.commit:main --outdir:docs src/nimcp.nim"
