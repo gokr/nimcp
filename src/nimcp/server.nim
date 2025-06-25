@@ -1,10 +1,8 @@
 ## MCP Server implementation with stdio transport
-
+# Note: Using deprecated threadpool for concurrent request processing
 import json, tables, options, locks, threadpool
 import json_serialization
 import types, protocol
-
-
 
 # Fine-grained locks for specific data structures
 var toolsLock: Lock
@@ -14,15 +12,13 @@ initLock(toolsLock)
 initLock(resourcesLock)
 initLock(promptsLock)
 
-# Note: Using deprecated threadpool for concurrent request processing
-
 type
   McpServer* = ref object
     serverInfo*: McpServerInfo
     capabilities*: McpCapabilities
     tools*: Table[string, McpTool]
     toolHandlers*: Table[string, McpToolHandler]
-    resources*: Table[string, McpResource]
+    resourc# Note: Using deprecated threadpool for concurrent request processinges*: Table[string, McpResource]
     resourceHandlers*: Table[string, McpResourceHandler]  
     prompts*: Table[string, McpPrompt]
     promptHandlers*: Table[string, McpPromptHandler]
@@ -32,17 +28,10 @@ type
 var globalServerPtr: ptr McpServer
 
 proc newMcpServer*(name: string, version: string): McpServer =
-  result = McpServer(
-    serverInfo: McpServerInfo(name: name, version: version),
-    capabilities: McpCapabilities(),
-    tools: initTable[string, McpTool](),
-    toolHandlers: initTable[string, McpToolHandler](),
-    resources: initTable[string, McpResource](),
-    resourceHandlers: initTable[string, McpResourceHandler](),
-    prompts: initTable[string, McpPrompt](),
-    promptHandlers: initTable[string, McpPromptHandler](),
-    initialized: false
-  )
+  result = McpServer()
+  result.serverInfo = McpServerInfo(name: name, version: version)
+  result.capabilities = McpCapabilities()
+  result.initialized = false
 
 # Tool registration
 proc registerTool*(server: McpServer, tool: McpTool, handler: McpToolHandler) =
