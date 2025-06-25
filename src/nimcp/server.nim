@@ -18,7 +18,7 @@ type
     capabilities*: McpCapabilities
     tools*: Table[string, McpTool]
     toolHandlers*: Table[string, McpToolHandler]
-    resourc# Note: Using deprecated threadpool for concurrent request processinges*: Table[string, McpResource]
+    resources*: Table[string, McpResource]
     resourceHandlers*: Table[string, McpResourceHandler]  
     prompts*: Table[string, McpPrompt]
     promptHandlers*: Table[string, McpPromptHandler]
