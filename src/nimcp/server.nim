@@ -1,10 +1,20 @@
 ## MCP Server implementation with stdio transport
 
-import json, tables, options, locks
+import json, tables, options, locks, threadpool
 import json_serialization
 import types, protocol
 
-{.push warning[GcUnsafe2]:off.}
+
+
+# Fine-grained locks for specific data structures
+var toolsLock: Lock
+var resourcesLock: Lock
+var promptsLock: Lock
+initLock(toolsLock)
+initLock(resourcesLock)
+initLock(promptsLock)
+
+# Note: Using deprecated threadpool for concurrent request processing
 
 type
   McpServer* = ref object
@@ -17,6 +27,9 @@ type
     prompts*: Table[string, McpPrompt]
     promptHandlers*: Table[string, McpPromptHandler]
     initialized*: bool
+
+# Global server reference for taskpool access (using pointer for GC safety)
+var globalServerPtr: ptr McpServer
 
 proc newMcpServer*(name: string, version: string): McpServer =
   result = McpServer(
@@ -33,8 +46,9 @@ proc newMcpServer*(name: string, version: string): McpServer =
 
 # Tool registration
 proc registerTool*(server: McpServer, tool: McpTool, handler: McpToolHandler) =
-  server.tools[tool.name] = tool
-  server.toolHandlers[tool.name] = handler
+  withLock toolsLock:
+    server.tools[tool.name] = tool
+    server.toolHandlers[tool.name] = handler
   
   # Enable tools capability
   if server.capabilities.tools.isNone:
@@ -42,8 +56,9 @@ proc registerTool*(server: McpServer, tool: McpTool, handler: McpToolHandler) =
 
 # Resource registration  
 proc registerResource*(server: McpServer, resource: McpResource, handler: McpResourceHandler) =
-  server.resources[resource.uri] = resource
-  server.resourceHandlers[resource.uri] = handler
+  withLock resourcesLock:
+    server.resources[resource.uri] = resource
+    server.resourceHandlers[resource.uri] = handler
   
   # Enable resources capability
   if server.capabilities.resources.isNone:
@@ -51,8 +66,9 @@ proc registerResource*(server: McpServer, resource: McpResource, handler: McpRes
 
 # Prompt registration
 proc registerPrompt*(server: McpServer, prompt: McpPrompt, handler: McpPromptHandler) =
-  server.prompts[prompt.name] = prompt
-  server.promptHandlers[prompt.name] = handler
+  withLock promptsLock:
+    server.prompts[prompt.name] = prompt
+    server.promptHandlers[prompt.name] = handler
   
   # Enable prompts capability
   if server.capabilities.prompts.isNone:
@@ -65,41 +81,52 @@ proc handleInitialize(server: McpServer, params: JsonNode): JsonNode {.gcsafe.} 
 
 proc handleToolsList(server: McpServer): JsonNode {.gcsafe.} =
   var tools: seq[McpTool] = @[]
-  for tool in server.tools.values:
-    tools.add(tool)
+  withLock toolsLock:
+    for tool in server.tools.values:
+      tools.add(tool)
   return createToolsListResponse(tools)
 
 proc handleToolsCall(server: McpServer, params: JsonNode): JsonNode {.gcsafe.} =
   let toolName = params["name"].getStr()
   let args = if params.hasKey("arguments"): params["arguments"] else: newJObject()
   
-  if toolName notin server.toolHandlers:
-    raise newException(ValueError, "Tool not found: " & toolName)
+  # Get handler with lock protection
+  var handler: McpToolHandler
+  withLock toolsLock:
+    if toolName notin server.toolHandlers:
+      raise newException(ValueError, "Tool not found: " & toolName)
+    handler = server.toolHandlers[toolName]
   
-  let handler = server.toolHandlers[toolName]
+  # Execute handler outside lock for true concurrency
   let res = handler(args)
   return parseJson(toJson(res))
 
 proc handleResourcesList(server: McpServer): JsonNode {.gcsafe.} =
   var resources: seq[McpResource] = @[]
-  for resource in server.resources.values:
-    resources.add(resource)
+  withLock resourcesLock:
+    for resource in server.resources.values:
+      resources.add(resource)
   return createResourcesListResponse(resources)
 
 proc handleResourcesRead(server: McpServer, params: JsonNode): JsonNode {.gcsafe.} =
   let uri = params["uri"].getStr()
   
-  if uri notin server.resourceHandlers:
-    raise newException(ValueError, "Resource not found: " & uri)
+  # Get handler with lock protection
+  var handler: McpResourceHandler
+  withLock resourcesLock:
+    if uri notin server.resourceHandlers:
+      raise newException(ValueError, "Resource not found: " & uri)
+    handler = server.resourceHandlers[uri]
   
-  let handler = server.resourceHandlers[uri]
+  # Execute handler outside lock for true concurrency
   let res = handler(uri)
   return parseJson(toJson(res))
 
 proc handlePromptsList(server: McpServer): JsonNode {.gcsafe.} =
   var prompts: seq[McpPrompt] = @[]
-  for prompt in server.prompts.values:
-    prompts.add(prompt)
+  withLock promptsLock:
+    for prompt in server.prompts.values:
+      prompts.add(prompt)
   return createPromptsListResponse(prompts)
 
 proc handlePromptsGet(server: McpServer, params: JsonNode): JsonNode {.gcsafe.} =
@@ -110,10 +137,14 @@ proc handlePromptsGet(server: McpServer, params: JsonNode): JsonNode {.gcsafe.} 
     for key, value in params["arguments"]:
       args[key] = value
   
-  if promptName notin server.promptHandlers:
-    raise newException(ValueError, "Prompt not found: " & promptName)
+  # Get handler with lock protection
+  var handler: McpPromptHandler
+  withLock promptsLock:
+    if promptName notin server.promptHandlers:
+      raise newException(ValueError, "Prompt not found: " & promptName)
+    handler = server.promptHandlers[promptName]
   
-  let handler = server.promptHandlers[promptName]
+  # Execute handler outside lock for true concurrency
   let res = handler(promptName, args)
   return parseJson(toJson(res))
 
@@ -176,15 +207,12 @@ proc safeEcho(msg: string) =
     echo msg
     stdout.flushFile()
 
-# Thread data for request processing
-type
-  RequestThread* = Thread[tuple[server: McpServer, line: string]]
-
-proc processRequestThread(data: tuple[server: McpServer, line: string]) {.thread.} =
-  let (server, requestLine) = data
+# Request processing for threadpool - parse JSON and use global server
+proc processRequest(requestLine: string): void {.gcsafe.} =
   var requestId: JsonRpcId = JsonRpcId(kind: jridString, str: "")
   
   try:
+    # Parse JSON in the spawned task
     let request = parseJsonRpcMessage(requestLine)
     
     # Extract ID for error handling
@@ -193,11 +221,12 @@ proc processRequestThread(data: tuple[server: McpServer, line: string]) {.thread
     
     # Check if this is a notification (no ID) - don't send response
     if request.id.isNone:
-      server.handleNotification(request)
+      globalServerPtr[].handleNotification(request)
     else:
       # This is a request - send response
-      let response = server.handleRequest(request)
-      # Manual JSON creation to avoid thread safety issues
+      let response = globalServerPtr[].handleRequest(request)
+      
+      # Manual JSON creation (outside lock to minimize critical section)
       var responseJson = newJObject()
       responseJson["jsonrpc"] = %response.jsonrpc
       responseJson["id"] = %response.id
@@ -215,32 +244,26 @@ proc processRequestThread(data: tuple[server: McpServer, line: string]) {.thread
     let errorResponse = createJsonRpcError(requestId, ParseError, "Parse error: " & e.msg)
     safeEcho($(%errorResponse))
 
-# Stdio transport implementation with concurrent request handling
+# Stdio transport implementation with concurrent request handling using threadpool
 proc runStdio*(server: McpServer) =
-  var threads: seq[RequestThread] = @[]
-  
+  globalServerPtr = addr server  # Set global pointer for threadpool access
   while true:
     try:
       let line = stdin.readLine()
       if line.len == 0:
         break
       
-      # Create and start a new thread for this request
-      var thread: RequestThread
-      createThread(thread, processRequestThread, (server, line))
-      threads.add(thread)
+      # Spawn task in threadpool - pass raw string for parsing in task
+      spawn processRequest(line)
       
     except EOFError:
-      # Input stream ended, wait for all threads to complete
-      for thread in threads:
-        joinThread(thread)
+      # Input stream ended - sync all pending tasks
+      sync()
       break
     except Exception:
-      # Other exceptions while reading input
-      for thread in threads:
-        joinThread(thread)
+      # Other exceptions while reading input - sync all pending tasks
+      sync()
       break
   
-  # Wait for any remaining threads to complete
-  for thread in threads:
-    joinThread(thread)
+  # Wait for all remaining tasks to complete
+  sync()
