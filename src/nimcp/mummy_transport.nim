@@ -1,31 +1,110 @@
 ## Mummy HTTP transport for MCP servers
 ## Integrates fully with existing server.nim mechanisms
 
-import mummy, mummy/routers, json, strutils, strformat, options
+import mummy, mummy/routers, json, strutils, strformat, options, tables
 import server, types, protocol
 
 type
+  TokenValidator* = proc(token: string): bool {.gcsafe.}
+  
+  AuthConfig* = object
+    enabled*: bool
+    validator*: TokenValidator
+    requireHttps*: bool
+    customErrorResponses*: Table[int, string]
+  
   MummyTransport* = ref object
     server: McpServer
     router: Router
     httpServer: Server
     port: int
     host: string
+    authConfig*: AuthConfig
 
-proc newMummyTransport*(server: McpServer, port: int = 8080, host: string = "127.0.0.1"): MummyTransport =
+proc newAuthConfig*(): AuthConfig =
+  ## Create a default authentication configuration (disabled)
+  AuthConfig(
+    enabled: false,
+    validator: nil,
+    requireHttps: false,
+    customErrorResponses: initTable[int, string]()
+  )
+
+proc newAuthConfig*(validator: TokenValidator, requireHttps: bool = false): AuthConfig =
+  ## Create an enabled authentication configuration with custom validator
+  AuthConfig(
+    enabled: true,
+    validator: validator,
+    requireHttps: requireHttps,
+    customErrorResponses: initTable[int, string]()
+  )
+
+proc newMummyTransport*(server: McpServer, port: int = 8080, host: string = "127.0.0.1", authConfig: AuthConfig = newAuthConfig()): MummyTransport =
   MummyTransport(
     server: server,
     router: Router(),
     port: port,
-    host: host
+    host: host,
+    authConfig: authConfig
   )
+
+proc extractBearerToken(request: Request): Option[string] =
+  ## Extract Bearer token from Authorization header
+  if "Authorization" in request.headers:
+    let authHeader = request.headers["Authorization"]
+    if authHeader.startsWith("Bearer "):
+      return some(authHeader[7..^1].strip())
+  return none(string)
+
+proc validateAuthentication(transport: MummyTransport, request: Request): tuple[valid: bool, errorCode: int, errorMsg: string] =
+  ## Validate authentication according to MCP specification
+  if not transport.authConfig.enabled:
+    return (true, 0, "")
+  
+  # Check HTTPS requirement
+  if transport.authConfig.requireHttps:
+    let proto = if "X-Forwarded-Proto" in request.headers: request.headers["X-Forwarded-Proto"] else: "http"
+    if not proto.startsWith("https"):
+      return (false, 400, "HTTPS required for authentication")
+  
+  # Extract Bearer token
+  let tokenOpt = extractBearerToken(request)
+  if tokenOpt.isNone:
+    return (false, 401, "Authorization required: Bearer token missing")
+  
+  let token = tokenOpt.get()
+  if token.len == 0:
+    return (false, 400, "Malformed authorization: empty token")
+  
+  # Validate token using configured validator
+  if transport.authConfig.validator == nil:
+    return (false, 500, "Internal error: no token validator configured")
+  
+  try:
+    if not transport.authConfig.validator(token):
+      return (false, 401, "Authorization required: token invalid")
+  except:
+    return (false, 500, "Internal error: token validation failed")
+  
+  return (true, 0, "")
 
 proc handleMcpRequest(transport: MummyTransport, request: Request) {.gcsafe.} =
   var headers: HttpHeaders
   headers["Access-Control-Allow-Origin"] = "*"
   headers["Access-Control-Allow-Methods"] = "POST, GET, OPTIONS"
-  headers["Access-Control-Allow-Headers"] = "Content-Type, Accept, Origin"
+  headers["Access-Control-Allow-Headers"] = "Content-Type, Accept, Origin, Authorization"
   headers["Content-Type"] = "application/json"
+  
+  # Authentication validation (skip for OPTIONS requests)
+  if request.httpMethod != "OPTIONS":
+    let authResult = validateAuthentication(transport, request)
+    if not authResult.valid:
+      let errorMsg = if authResult.errorCode in transport.authConfig.customErrorResponses:
+                      transport.authConfig.customErrorResponses[authResult.errorCode]
+                    else:
+                      authResult.errorMsg
+      request.respond(authResult.errorCode, headers, errorMsg)
+      return
   
   case request.httpMethod:
     of "OPTIONS":
@@ -110,7 +189,7 @@ proc serve*(transport: MummyTransport) =
   
   transport.httpServer.serve(Port(transport.port), transport.host)
 
-proc runHttp*(server: McpServer, port: int = 8080, host: string = "127.0.0.1") =
+proc runHttp*(server: McpServer, port: int = 8080, host: string = "127.0.0.1", authConfig: AuthConfig = newAuthConfig()) =
   ## Convenience function to run an MCP server over HTTP
-  let transport = newMummyTransport(server, port, host)
+  let transport = newMummyTransport(server, port, host, authConfig)
   transport.serve()

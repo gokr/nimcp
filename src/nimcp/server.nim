@@ -182,8 +182,14 @@ type
 
 proc processRequestThread(data: tuple[server: McpServer, line: string]) {.thread.} =
   let (server, requestLine) = data
+  var requestId: JsonRpcId = JsonRpcId(kind: jridString, str: "")
+  
   try:
     let request = parseJsonRpcMessage(requestLine)
+    
+    # Extract ID for error handling
+    if request.id.isSome:
+      requestId = request.id.get
     
     # Check if this is a notification (no ID) - don't send response
     if request.id.isNone:
@@ -191,17 +197,22 @@ proc processRequestThread(data: tuple[server: McpServer, line: string]) {.thread
     else:
       # This is a request - send response
       let response = server.handleRequest(request)
-      # Custom JSON serialization to exclude null fields
+      # Manual JSON creation to avoid thread safety issues
       var responseJson = newJObject()
       responseJson["jsonrpc"] = %response.jsonrpc
       responseJson["id"] = %response.id
       if response.result.isSome:
         responseJson["result"] = response.result.get
       if response.error.isSome:
-        responseJson["error"] = %response.error.get
+        let errorObj = newJObject()
+        errorObj["code"] = %response.error.get.code
+        errorObj["message"] = %response.error.get.message
+        if response.error.get.data.isSome:
+          errorObj["data"] = response.error.get.data.get
+        responseJson["error"] = errorObj
       safeEcho($responseJson)
   except Exception as e:
-    let errorResponse = createJsonRpcError(JsonRpcId(kind: jridString, str: ""), ParseError, "Parse error: " & e.msg)
+    let errorResponse = createJsonRpcError(requestId, ParseError, "Parse error: " & e.msg)
     safeEcho($(%errorResponse))
 
 # Stdio transport implementation with concurrent request handling

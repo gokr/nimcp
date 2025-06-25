@@ -48,6 +48,16 @@ This directory contains examples demonstrating different ways to create MCP serv
   - Tools: add, multiply, factorial
 - **Best for**: HTTP servers requiring fine-grained control
 
+### 6. `authenticated_mummy_calculator.nim` - HTTP with Bearer Token Authentication
+- **API Style**: Manual (low-level API)
+- **Transport**: HTTP with Bearer token authentication
+- **Features**:
+  - Bearer token authentication following MCP specification
+  - Token validation with configurable validator function
+  - Tools: add, multiply, factorial
+  - Demonstrates authentication configuration
+- **Best for**: Secure HTTP servers requiring token-based authentication
+
 ## API Styles Comparison
 
 ### Manual API
@@ -92,12 +102,31 @@ curl -X POST http://localhost:8080 \
   -d '{"jsonrpc":"2.0","method":"tools/call","params":{"name":"add","arguments":{"a":5,"b":3}},"id":1}'
 ```
 
+## Authentication
+
+### Authenticated HTTP Example
+The `authenticated_mummy_calculator.nim` example demonstrates Bearer token authentication:
+
+```bash
+# Valid request with authentication
+curl -X POST http://localhost:8080 \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer valid-token-123" \
+  -d '{"jsonrpc":"2.0","method":"tools/call","params":{"name":"add","arguments":{"a":5,"b":3}},"id":1}'
+
+# Request without authentication (will fail with 401)
+curl -X POST http://localhost:8080 \
+  -H "Content-Type: application/json" \
+  -d '{"jsonrpc":"2.0","method":"tools/call","params":{"name":"add","arguments":{"a":5,"b":3}},"id":1}'
+```
+
 ## Architecture Matrix
 
-| Example | API Style | Transport | Complexity |
-|---------|-----------|-----------|------------|
-| `simple_server.nim` | Manual | Stdio | Basic |
-| `calculator_server.nim` | Manual | Stdio | Intermediate |
-| `macro_calculator.nim` | Macro | Stdio | Intermediate |
-| `macro_mummy_calculator.nim` | Macro | HTTP | Intermediate |
-| `mummy_calculator.nim` | Manual | HTTP | Advanced |
+| Example | API Style | Transport | Authentication | Complexity |
+|---------|-----------|-----------|----------------|------------|
+| `simple_server.nim` | Manual | Stdio | None | Basic |
+| `calculator_server.nim` | Manual | Stdio | None | Intermediate |
+| `macro_calculator.nim` | Macro | Stdio | None | Intermediate |
+| `macro_mummy_calculator.nim` | Macro | HTTP | None | Intermediate |
+| `mummy_calculator.nim` | Manual | HTTP | None | Advanced |
+| `authenticated_mummy_calculator.nim` | Manual | HTTP | Bearer Token | Advanced |
