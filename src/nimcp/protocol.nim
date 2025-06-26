@@ -91,7 +91,7 @@ proc cleanCapabilities*(caps: McpCapabilities): JsonNode =
 # MCP-specific message handling
 proc createInitializeResponse*(serverInfo: McpServerInfo, capabilities: McpCapabilities): JsonNode =
   %*{
-    "protocolVersion": "2024-11-05",
+    "protocolVersion": MCP_PROTOCOL_VERSION,
     "serverInfo": serverInfo,
     "capabilities": cleanCapabilities(capabilities)
   }

@@ -81,6 +81,18 @@ suite "HTTP Authentication Tests":
   test "HTTP Authentication Integration - Real Server":
     # Create a test server with authentication
     let server = newMcpServer("integration-test", "1.0.0")
+
+    # Initialize the server
+    let initRequest = JsonRpcRequest(
+      jsonrpc: "2.0",
+      id: some(JsonRpcId(kind: jridInt, num: 1)),
+      `method`: "initialize",
+      params: some(%*{
+        "protocolVersion": "2024-11-05",
+        "capabilities": {"tools": {}}
+      })
+    )
+    discard server.handleRequest(initRequest)
     
     # Register a simple test tool
     proc testHandler(args: JsonNode): McpToolResult =
@@ -149,8 +161,13 @@ suite "HTTP Authentication Tests":
         fmt"http://{testHost}:{testPort}",
         $testRequest
       )
-      
+
       let validJson = parseJson(validResponse)
+
+      if validJson.hasKey("error"):
+        echo "Error in response: ", validJson["error"]
+        fail()
+
       check validJson.hasKey("result")
       check validJson["result"]["content"][0]["text"].getStr() == "Authenticated response"
       

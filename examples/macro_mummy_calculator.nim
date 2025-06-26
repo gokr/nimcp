@@ -1,7 +1,7 @@
 ## Macro-based Mummy HTTP calculator example
 ## Demonstrates automatic tool generation with HTTP transport
 
-import ../src/nimcp/mcpmacros, ../src/nimcp/mummy_transport
+import ../src/nimcp
 import json, math, strformat
 
 mcpServer("macro-mummy-calculator", "1.0.0"):
@@ -75,5 +75,5 @@ when isMainModule:
   echo """  -d '{"jsonrpc":"2.0","id":"2","method":"tools/call","params":{"name":"add","arguments":{"a":5.5,"b":3.2}}}'"""
   echo ""
   
-  # Use the HTTP transport with the macro-generated server
-  currentMcpServer.runHttp(8080, "127.0.0.1")
+  # Use the unified transport API with HTTP configuration  
+  runServer(HttpTransport(8080, "127.0.0.1"))

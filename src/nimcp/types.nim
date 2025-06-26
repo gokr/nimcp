@@ -3,6 +3,10 @@
 import json, tables, options
 import json_serialization
 
+# Constants
+const
+  MCP_PROTOCOL_VERSION* = "2024-11-05"  ## Current MCP protocol version
+
 type
   # JSON-RPC 2.0 base types
   JsonRpcIdKind* = enum
@@ -155,10 +159,63 @@ proc to*(node: JsonNode, T: typedesc[JsonRpcId]): JsonRpcId =
   else:
     raise newException(ValueError, "Invalid JsonRpcId format")
 
-# JSON-RPC error codes
+# JSON-RPC error codes (as per JSON-RPC 2.0 specification)
 const
-  ParseError* = -32700
-  InvalidRequest* = -32600
-  MethodNotFound* = -32601
-  InvalidParams* = -32602
-  InternalError* = -32603
+  ParseError* = -32700      ## Invalid JSON was received by the server
+  InvalidRequest* = -32600  ## The JSON sent is not a valid Request object
+  MethodNotFound* = -32601  ## The method does not exist / is not available
+  InvalidParams* = -32602   ## Invalid method parameter(s)
+  InternalError* = -32603   ## Internal JSON-RPC error
+
+# MCP-specific error codes (application-defined range)
+const
+  McpServerNotInitialized* = -32000  ## Server has not been initialized yet
+  McpToolNotFound* = -32001          ## Requested tool does not exist
+  McpResourceNotFound* = -32002      ## Requested resource does not exist
+  McpPromptNotFound* = -32003        ## Requested prompt does not exist
+  McpAuthenticationRequired* = -32004 ## Authentication is required
+  McpAuthenticationFailed* = -32005   ## Authentication failed
+  McpRateLimitExceeded* = -32006     ## Rate limit exceeded
+
+# Transport configuration types
+type
+  McpTransportKind* = enum
+    mtStdio,    ## Standard input/output transport
+    mtHttp      ## HTTP transport
+  
+  McpTransportConfig* = object
+    case kind*: McpTransportKind
+    of mtStdio:
+      discard
+    of mtHttp:
+      port*: int
+      host*: string
+      requireHttps*: bool
+      tokenValidator*: proc(token: string): bool {.gcsafe.}
+
+# Convenience constructor functions for transport configs
+proc StdioTransport*(): McpTransportConfig =
+  ## Create a stdio transport configuration
+  McpTransportConfig(kind: mtStdio)
+
+proc HttpTransport*(port: int = 8080, host: string = "127.0.0.1"): McpTransportConfig =
+  ## Create an HTTP transport configuration
+  McpTransportConfig(
+    kind: mtHttp,
+    port: port,
+    host: host,
+    requireHttps: false,
+    tokenValidator: nil
+  )
+
+proc HttpTransportAuth*(port: int = 8080, host: string = "127.0.0.1", 
+                       requireHttps: bool = false, 
+                       tokenValidator: proc(token: string): bool {.gcsafe.}): McpTransportConfig =
+  ## Create an HTTP transport configuration with authentication
+  McpTransportConfig(
+    kind: mtHttp,
+    port: port,
+    host: host,
+    requireHttps: requireHttps,
+    tokenValidator: tokenValidator
+  )

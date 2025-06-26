@@ -12,10 +12,11 @@
 - 🚀 **Macro-driven API** - Define servers, tools, resources, and prompts with simple, declarative syntax
 - 📡 **Full MCP Support** - Complete implementation of MCP specification with JSON-RPC 2.0
 - 🌐 **Multiple Transports** - Supports both stdio and HTTP transports (via Mummy web server)
-- ⚡ **High Performance** - Efficient implementation without async overhead
+- ⚡ **High Performance** - Efficient implementation with modern taskpools for concurrent processing
 - 🛠️ **Type Safe** - Leverages Nim's strong type system for reliability
 - 📦 **Minimal Dependencies** - Uses only essential, well-maintained packages
 - 🔧 **Easy Integration** - Works with any MCP-compatible LLM application
+- 🔄 **Modern Concurrency** - Uses taskpools for energy-efficient, high-performance threading
 
 ## Quick Start
 
@@ -41,6 +42,16 @@ mcpServer("my-server", "1.0.0"):
     proc add(a: float, b: float): string =
       ## Add two numbers together
       return $fmt"Result: {a + b}"
+```
+
+Run your server with:
+
+```nim
+when isMainModule:
+  runServer()  # Uses stdio transport (default)
+  
+  # Or specify HTTP transport:
+  # runServer(HttpTransport(8080, "127.0.0.1"))
 ```
 
 That's it! Your MCP server is ready to run.
@@ -120,6 +131,34 @@ server.registerTool(tool, customHandler)
 # Run the server
 server.runStdio()
 ```
+
+### Modern Taskpools Server
+
+For high-performance applications, use the modern taskpools-based server:
+
+```nim
+import nimcp/taskpool_server, json, options
+
+# Create server with configurable thread count
+let server = newTaskpoolMcpServer("my-server", "1.0.0", numThreads = 4)
+
+# Register tools (same API as legacy server)
+server.registerTool(tool, handler)
+
+# Run with proper cleanup
+try:
+  server.runStdio()
+finally:
+  server.shutdown()  # Important: Clean up taskpool resources
+```
+
+**Benefits of Taskpools Server:**
+- Energy-efficient (threads spin down when idle)
+- Better performance and lower overhead
+- Modern design built for ARC/ORC memory management
+- Configurable thread count for optimal performance
+
+See [TASKPOOLS_MIGRATION.md](docs/TASKPOOLS_MIGRATION.md) for detailed migration guide.
 
 ### Error Handling
 

@@ -1,7 +1,7 @@
 ## Powerful macros for easy MCP server creation
 
 import macros, json, tables, options, strutils, typetraits
-import types, server, protocol
+import types, server, protocol, mummy_transport
 
 # Helper to convert Nim types to JSON schema types
 proc nimTypeToJsonSchema(nimType: NimNode): JsonNode =
@@ -116,7 +116,8 @@ macro mcpTool*(procDef: untyped): untyped =
   # Return the original proc definition unchanged so it can be used normally
   # Note: actualProcDef is already part of the input, so we don't add it again
 
-# Global server instance for macro access
+# Global server instance for macro access 
+# WARNING: This is internal to the macro system - users should not access this directly
 var currentMcpServer*: McpServer
 
 # Server creation template with advanced tool registration
@@ -125,8 +126,16 @@ template mcpServer*(name: string, version: string, body: untyped): untyped =
   currentMcpServer = mcpServerInstance
   body
   
-  proc runServer*() =
-    mcpServerInstance.runStdio()
+  proc runServer*(transport: McpTransportConfig = StdioTransport()) =
+    case transport.kind:
+    of mtStdio:
+      mcpServerInstance.runStdio()
+    of mtHttp:
+      let authConfig = if transport.tokenValidator != nil:
+                        newAuthConfig(transport.tokenValidator, transport.requireHttps)
+                      else:
+                        newAuthConfig()
+      mcpServerInstance.runHttp(transport.port, transport.host, authConfig)
 
 
 # Simple resource registration template  
