@@ -16,7 +16,6 @@
 - 🛠️ **Type Safe** - Leverages Nim's strong type system for reliability
 - 📦 **Minimal Dependencies** - Uses only essential, well-maintained packages
 - 🔧 **Easy Integration** - Works with any MCP-compatible LLM application
-- 🔄 **Modern Concurrency** - Uses taskpools for energy-efficient, high-performance threading
 
 ## Quick Start
 

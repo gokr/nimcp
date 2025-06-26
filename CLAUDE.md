@@ -107,3 +107,4 @@ The macro API automatically extracts:
 ## Coding Guidelines
 - **Variable Naming**:
   * Do not introduce a local variable called "result" since Nim has such a variable already defined that represents the return value
+  * Always use doc comment with double "##" right below the signature for Nim procs, not above

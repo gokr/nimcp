@@ -1,22 +1,14 @@
-## MCP Server implementation with stdio transport
+## MCP Server implementation using taskpools for concurrent request processing
 ##
-## This module provides the core MCP server functionality including:
-## - Server creation and configuration
-## - Tool, resource, and prompt registration
-## - JSON-RPC 2.0 message handling
-## - Concurrent request processing via stdio transport
-##
-## Note: Currently uses deprecated threadpool for concurrent request processing.
-## This should be migrated to taskpools or malebolgia in a future version.
+## This module provides the main MCP server implementation using the modern
+## taskpools library for better performance and energy efficiency.
 
-import json, tables, options, locks, threadpool
+import json, tables, options, locks, cpuinfo
 import json_serialization
+import taskpools
 import types, protocol
 
-
-
 # Fine-grained locks for thread-safe access to server data structures
-# These locks ensure concurrent access to tools, resources, and prompts is safe
 var toolsLock: Lock
 var resourcesLock: Lock
 var promptsLock: Lock
@@ -26,98 +18,87 @@ initLock(promptsLock)
 
 type
   McpServer* = ref object
-    ## Core MCP server object that manages tools, resources, prompts and their handlers
-    serverInfo*: McpServerInfo              ## Server identification information
-    capabilities*: McpCapabilities          ## Server capabilities advertised to clients
-    tools*: Table[string, McpTool]          ## Registered tools indexed by name
-    toolHandlers*: Table[string, McpToolHandler]    ## Tool execution handlers
-    resources*: Table[string, McpResource]  ## Registered resources indexed by URI
-    resourceHandlers*: Table[string, McpResourceHandler]  ## Resource access handlers
-    prompts*: Table[string, McpPrompt]      ## Registered prompts indexed by name
-    promptHandlers*: Table[string, McpPromptHandler]      ## Prompt execution handlers
-    initialized*: bool                      ## Whether server has been initialized by client
+    ## MCP server using taskpools for concurrent processing
+    serverInfo*: McpServerInfo
+    capabilities*: McpCapabilities
+    tools*: Table[string, McpTool]
+    toolHandlers*: Table[string, McpToolHandler]
+    resources*: Table[string, McpResource]
+    resourceHandlers*: Table[string, McpResourceHandler]
+    prompts*: Table[string, McpPrompt]
+    promptHandlers*: Table[string, McpPromptHandler]
+    initialized*: bool
+    taskpool*: Taskpool
 
-# Global server reference for threadpool access (using pointer for GC safety)
-# TODO: Remove this global when migrating away from deprecated threadpool
-var globalServerPtr: ptr McpServer
-
-proc newMcpServer*(name: string, version: string): McpServer =
-  ## Create a new MCP server instance with the given name and version.
+proc newMcpServer*(name: string, version: string, numThreads: int = 0): McpServer =
+  ## Create a new MCP server instance using taskpools for concurrency.
   ##
   ## Args:
   ##   name: Human-readable name for the server
   ##   version: Semantic version string (e.g., "1.0.0")
+  ##   numThreads: Number of worker threads (0 = auto-detect)
   ##
   ## Returns:
-  ##   A new McpServer instance ready for tool/resource/prompt registration
+  ##   A new McpServer instance ready for registration
   result = McpServer()
   result.serverInfo = McpServerInfo(name: name, version: version)
   result.capabilities = McpCapabilities()
   result.initialized = false
+  
+  # Initialize taskpool with specified or auto-detected thread count
+  let threads = if numThreads > 0: numThreads else: countProcessors()
+  result.taskpool = Taskpool.new(numThreads = threads)
 
-# Tool registration
+proc shutdown*(server: McpServer) =
+  ## Shutdown the server and clean up resources
+  if server.taskpool != nil:
+    server.taskpool.syncAll()
+    server.taskpool.shutdown()
+
+# Registration functions (same as original server but with validation)
 proc registerTool*(server: McpServer, tool: McpTool, handler: McpToolHandler) =
   ## Register a tool with its handler function.
-  ##
-  ## Args:
-  ##   tool: Tool definition with name, description, and input schema
-  ##   handler: Function that executes the tool with given arguments
-  ##
-  ## Thread Safety:
-  ##   This function is thread-safe and can be called concurrently
-  ##
-  ## Raises:
-  ##   ValueError: If tool name is empty or handler is nil
   if tool.name.len == 0:
     raise newException(ValueError, "Tool name cannot be empty")
   if handler == nil:
     raise newException(ValueError, "Tool handler cannot be nil")
-
+  
   withLock toolsLock:
     server.tools[tool.name] = tool
     server.toolHandlers[tool.name] = handler
-
-  # Enable tools capability
+  
   if server.capabilities.tools.isNone:
     server.capabilities.tools = some(McpToolsCapability())
 
-# Resource registration
 proc registerResource*(server: McpServer, resource: McpResource, handler: McpResourceHandler) =
   ## Register a resource with its handler function.
-  ##
-  ## Args:
-  ##   resource: Resource definition with URI, name, and optional description
-  ##   handler: Function that provides the resource content
-  ##
-  ## Thread Safety:
-  ##   This function is thread-safe and can be called concurrently
-  ##
-  ## Raises:
-  ##   ValueError: If resource URI is empty or handler is nil
   if resource.uri.len == 0:
     raise newException(ValueError, "Resource URI cannot be empty")
   if handler == nil:
     raise newException(ValueError, "Resource handler cannot be nil")
-
+  
   withLock resourcesLock:
     server.resources[resource.uri] = resource
     server.resourceHandlers[resource.uri] = handler
-
-  # Enable resources capability
+  
   if server.capabilities.resources.isNone:
     server.capabilities.resources = some(McpResourcesCapability())
 
-# Prompt registration
 proc registerPrompt*(server: McpServer, prompt: McpPrompt, handler: McpPromptHandler) =
+  ## Register a prompt with its handler function.
+  if prompt.name.len == 0:
+    raise newException(ValueError, "Prompt name cannot be empty")
+  if handler == nil:
+    raise newException(ValueError, "Prompt handler cannot be nil")
+  
   withLock promptsLock:
     server.prompts[prompt.name] = prompt
     server.promptHandlers[prompt.name] = handler
   
-  # Enable prompts capability
   if server.capabilities.prompts.isNone:
     server.capabilities.prompts = some(McpPromptsCapability())
 
-# Core message handlers
+# Core message handlers (same logic as original server)
 proc handleInitialize(server: McpServer, params: JsonNode): JsonNode {.gcsafe.} =
   server.initialized = true
   return createInitializeResponse(server.serverInfo, server.capabilities)
@@ -130,29 +111,25 @@ proc handleToolsList(server: McpServer): JsonNode {.gcsafe.} =
   return createToolsListResponse(tools)
 
 proc handleToolsCall(server: McpServer, params: JsonNode): JsonNode {.gcsafe.} =
-  # Validate required parameters
   if not params.hasKey("name"):
     raise newException(ValueError, "Missing required parameter: name")
-
+  
   let toolName = params["name"].getStr()
   if toolName.len == 0:
     raise newException(ValueError, "Tool name cannot be empty")
-
+  
   let args = if params.hasKey("arguments"): params["arguments"] else: newJObject()
-
-  # Get handler with lock protection
+  
   var handler: McpToolHandler
   withLock toolsLock:
     if toolName notin server.toolHandlers:
       raise newException(ValueError, "Tool not found: " & toolName)
     handler = server.toolHandlers[toolName]
-
-  # Execute handler outside lock for true concurrency
+  
   try:
     let res = handler(args)
     return parseJson(toJson(res))
   except Exception as e:
-    # Wrap handler exceptions with more context
     raise newException(ValueError, "Tool execution failed for '" & toolName & "': " & e.msg)
 
 proc handleResourcesList(server: McpServer): JsonNode {.gcsafe.} =
@@ -163,27 +140,23 @@ proc handleResourcesList(server: McpServer): JsonNode {.gcsafe.} =
   return createResourcesListResponse(resources)
 
 proc handleResourcesRead(server: McpServer, params: JsonNode): JsonNode {.gcsafe.} =
-  # Validate required parameters
   if not params.hasKey("uri"):
     raise newException(ValueError, "Missing required parameter: uri")
-
+  
   let uri = params["uri"].getStr()
   if uri.len == 0:
     raise newException(ValueError, "Resource URI cannot be empty")
-
-  # Get handler with lock protection
+  
   var handler: McpResourceHandler
   withLock resourcesLock:
     if uri notin server.resourceHandlers:
       raise newException(ValueError, "Resource not found: " & uri)
     handler = server.resourceHandlers[uri]
-
-  # Execute handler outside lock for true concurrency
+  
   try:
     let res = handler(uri)
     return parseJson(toJson(res))
   except Exception as e:
-    # Wrap handler exceptions with more context
     raise newException(ValueError, "Resource access failed for '" & uri & "': " & e.msg)
 
 proc handlePromptsList(server: McpServer): JsonNode {.gcsafe.} =
@@ -194,64 +167,51 @@ proc handlePromptsList(server: McpServer): JsonNode {.gcsafe.} =
   return createPromptsListResponse(prompts)
 
 proc handlePromptsGet(server: McpServer, params: JsonNode): JsonNode {.gcsafe.} =
-  # Validate required parameters
   if not params.hasKey("name"):
     raise newException(ValueError, "Missing required parameter: name")
-
+  
   let promptName = params["name"].getStr()
   if promptName.len == 0:
     raise newException(ValueError, "Prompt name cannot be empty")
-
+  
   var args = initTable[string, JsonNode]()
-
   if params.hasKey("arguments"):
     for key, value in params["arguments"]:
       args[key] = value
-
-  # Get handler with lock protection
+  
   var handler: McpPromptHandler
   withLock promptsLock:
     if promptName notin server.promptHandlers:
       raise newException(ValueError, "Prompt not found: " & promptName)
     handler = server.promptHandlers[promptName]
-
-  # Execute handler outside lock for true concurrency
+  
   try:
     let res = handler(promptName, args)
     return parseJson(toJson(res))
   except Exception as e:
-    # Wrap handler exceptions with more context
     raise newException(ValueError, "Prompt execution failed for '" & promptName & "': " & e.msg)
 
-# Notification handler (messages without ID)
 proc handleNotification*(server: McpServer, request: JsonRpcRequest) {.gcsafe.} =
   try:
     case request.`method`:
       of "initialized":
-        # Client confirms initialization is complete
-        # Nothing to do - just acknowledge internally
         discard
       else:
-        # Unknown notification - ignore silently per JSON-RPC 2.0 spec
         discard
   except Exception:
-    # Notifications should not generate error responses
     discard
 
-# Main message dispatcher
 proc handleRequest*(server: McpServer, request: JsonRpcRequest): JsonRpcResponse {.gcsafe.} =
   if request.id.isNone:
-    # This is a notification - handle it but don't return a response
     server.handleNotification(request)
-    return JsonRpcResponse() # Return empty response that won't be sent
-
+    return JsonRpcResponse()
+  
   let id = request.id.get
-
+  
   try:
-    # Check if server is initialized for methods that require it
     if request.`method` != "initialize" and not server.initialized:
       return createJsonRpcError(id, McpServerNotInitialized, "Server must be initialized before calling " & request.`method`)
-
+    
     let res = case request.`method`:
       of "initialize":
         server.handleInitialize(request.params.get(newJObject()))
@@ -269,9 +229,9 @@ proc handleRequest*(server: McpServer, request: JsonRpcRequest): JsonRpcResponse
         server.handlePromptsGet(request.params.get(newJObject()))
       else:
         return createJsonRpcError(id, MethodNotFound, "Method not found: " & request.`method`)
-
+    
     return createJsonRpcResponse(id, res)
-
+    
   except ValueError as e:
     return createJsonRpcError(id, InvalidParams, e.msg)
   except JsonParsingError as e:
@@ -288,26 +248,25 @@ proc safeEcho(msg: string) =
     echo msg
     stdout.flushFile()
 
-# Request processing for threadpool - parse JSON and use global server
-proc processRequest(requestLine: string): void {.gcsafe.} =
+# Global server pointer for taskpools (similar to threadpool approach)
+var globalServerPtr: ptr McpServer
+
+# Request processing task for taskpools - uses global pointer to avoid isolation issues
+proc processRequestTask(requestLine: string) {.gcsafe.} =
   var requestId: JsonRpcId = JsonRpcId(kind: jridString, str: "")
-  
+
   try:
-    # Parse JSON in the spawned task
     let request = parseJsonRpcMessage(requestLine)
-    
-    # Extract ID for error handling
+
     if request.id.isSome:
       requestId = request.id.get
-    
-    # Check if this is a notification (no ID) - don't send response
+
     if request.id.isNone:
       globalServerPtr[].handleNotification(request)
     else:
-      # This is a request - send response
       let response = globalServerPtr[].handleRequest(request)
-      
-      # Manual JSON creation (outside lock to minimize critical section)
+
+      # Create JSON response manually for thread safety
       var responseJson = newJObject()
       responseJson["jsonrpc"] = %response.jsonrpc
       responseJson["id"] = %response.id
@@ -325,26 +284,28 @@ proc processRequest(requestLine: string): void {.gcsafe.} =
     let errorResponse = createJsonRpcError(requestId, ParseError, "Parse error: " & e.msg)
     safeEcho($(%errorResponse))
 
-# Stdio transport implementation with concurrent request handling using threadpool
+# Modern stdio transport using taskpools
 proc runStdio*(server: McpServer) =
-  globalServerPtr = addr server  # Set global pointer for threadpool access
+  ## Run the MCP server with stdio transport using modern taskpools
+  globalServerPtr = addr server
+
   while true:
     try:
       let line = stdin.readLine()
       if line.len == 0:
         break
-      
-      # Spawn task in threadpool - pass raw string for parsing in task
-      spawn processRequest(line)
-      
+
+      # Spawn task using taskpools - returns void so no need to track
+      server.taskpool.spawn processRequestTask(line)
+
     except EOFError:
-      # Input stream ended - sync all pending tasks
-      sync()
+      # Sync all pending tasks before shutdown
+      server.taskpool.syncAll()
       break
     except Exception:
-      # Other exceptions while reading input - sync all pending tasks
-      sync()
+      # Sync all pending tasks before shutdown
+      server.taskpool.syncAll()
       break
-  
-  # Wait for all remaining tasks to complete
-  sync()
+
+  # Wait for all remaining tasks and shutdown
+  server.shutdown()
