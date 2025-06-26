@@ -128,36 +128,11 @@ proc customHandler(args: JsonNode): McpToolResult =
 server.registerTool(tool, customHandler)
 
 # Run the server
-server.runStdio()
-```
-
-### Modern Taskpools Server
-
-For high-performance applications, use the modern taskpools-based server:
-
-```nim
-import nimcp/taskpool_server, json, options
-
-# Create server with configurable thread count
-let server = newTaskpoolMcpServer("my-server", "1.0.0", numThreads = 4)
-
-# Register tools (same API as legacy server)
-server.registerTool(tool, handler)
-
-# Run with proper cleanup
 try:
   server.runStdio()
 finally:
-  server.shutdown()  # Important: Clean up taskpool resources
+  server.shutdown()
 ```
-
-**Benefits of Taskpools Server:**
-- Energy-efficient (threads spin down when idle)
-- Better performance and lower overhead
-- Modern design built for ARC/ORC memory management
-- Configurable thread count for optimal performance
-
-See [TASKPOOLS_MIGRATION.md](docs/TASKPOOLS_MIGRATION.md) for detailed migration guide.
 
 ### Error Handling
 

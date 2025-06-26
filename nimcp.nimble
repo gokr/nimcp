@@ -1,5 +1,5 @@
 # Package
-version       = "0.2.0"
+version       = "0.3.0"
 author        = "Göran Krampe"
 description   = "Easy-to-use Model Context Protocol (MCP) server implementation for Nim"
 license       = "MIT"
@@ -15,8 +15,6 @@ requires "taskpools"
 task docs, "Generate documentation":
   exec "nim doc --project --index:on --git.url:https://github.com/gokr/nimcp --git.commit:main --outdir:docs src/nimcp.nim"
 
-task benchmark, "Run performance benchmarks":
-  exec "nim c -r -d:release --threads:on benchmarks/threadpool_vs_taskpools.nim"
 
 task test, "Run all tests":
   exec "nim c -r tests/test_basic.nim"
@@ -24,7 +22,6 @@ task test, "Run all tests":
   exec "nim c -r tests/test_calculator_server.nim"
   exec "nim c -r tests/test_concurrent_stdio.nim"
   exec "nim c -r tests/test_http_auth.nim"
-  exec "nim c -r tests/test_taskpool_server.nim"
   exec "nim c -r tests/test_error_handling.nim"
   exec "nim c -r tests/test_protocol_compliance.nim"
   exec "nim c -r tests/test_edge_cases.nim"
