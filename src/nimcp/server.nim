@@ -4,9 +4,8 @@
 ## taskpools library for better performance and energy efficiency.
 
 import json, tables, options, locks, cpuinfo, strutils, times, algorithm
-import json_serialization
 import taskpools
-import types, protocol, context, schema
+import types, protocol, context, schema, resource_templates, logging
 
 # Fine-grained locks for thread-safe access to server data structures
 var toolsLock: Lock
@@ -30,11 +29,32 @@ type
     prompts*: Table[string, McpPrompt]
     promptHandlers*: Table[string, McpPromptHandler]
     contextAwarePromptHandlers*: Table[string, McpPromptHandlerWithContext]
+    resourceTemplates*: ResourceTemplateRegistry
     middleware*: seq[McpMiddleware]
     initialized*: bool
     taskpool*: Taskpool
     requestTimeout*: int  # milliseconds
     enableContextLogging*: bool
+    logger*: Logger
+
+  # Server composition types (moved from types.nim to avoid circular dependency)
+  MountPoint* = object
+    ## Represents a mount point for a server
+    path*: string
+    server*: McpServer  # Proper ref type instead of unsafe pointer
+    prefix*: Option[string]  # Optional prefix for tool/resource names
+
+  ComposedServer* = ref object
+    ## A server that can mount multiple other servers
+    mainServer*: McpServer  # Proper ref type instead of unsafe pointer
+    mountPoints*: seq[MountPoint]
+    pathMappings*: Table[string, MountPoint]
+
+  ServerNamespace* = object
+    ## Namespace configuration for mounted servers
+    toolPrefix*: Option[string]
+    resourcePrefix*: Option[string]
+    promptPrefix*: Option[string]
 
 proc newMcpServer*(name: string, version: string, numThreads: int = 0): McpServer =
   ## Create a new enhanced MCP server instance using taskpools for concurrency.
@@ -53,6 +73,12 @@ proc newMcpServer*(name: string, version: string, numThreads: int = 0): McpServe
   result.requestTimeout = 30000  # 30 seconds default
   result.enableContextLogging = false
   result.middleware = @[]
+  result.resourceTemplates = newResourceTemplateRegistry()
+  
+  # Initialize logging with server-specific component name
+  result.logger = newLogger(llInfo)
+  result.logger.setComponent("mcp-server-" & name)
+  result.logger.setupChroniclesLogging()
   
   # Initialize taskpool with specified or auto-detected thread count
   let threads = if numThreads > 0: numThreads else: countProcessors()
@@ -60,100 +86,221 @@ proc newMcpServer*(name: string, version: string, numThreads: int = 0): McpServe
   
   # Initialize the context manager
   initContextManager()
+  
+  # Log server initialization
+  result.logger.info("MCP server initialized", 
+    context = {"name": %name, "version": %version, "threads": %threads}.toTable)
 
 proc shutdown*(server: McpServer) =
   ## Shutdown the server and clean up resources
+  server.logger.info("Shutting down MCP server")
+  
   if server.taskpool != nil:
     server.taskpool.syncAll()
     server.taskpool.shutdown()
   
   # Clean up any remaining contexts
   cleanupExpiredContexts()
+  
+  server.logger.info("MCP server shutdown complete")
 
-# Registration functions (same as original server but with validation)
+# Helper functions to reduce registration code duplication
+proc validateRegistration(itemType: string, itemKey: string) =
+  ## Common validation logic for all registration functions
+  if itemKey.len == 0:
+    raise newException(ValueError, itemType & " name/URI cannot be empty")
+
+proc ensureToolsCapability(server: McpServer) =
+  ## Ensure tools capability is initialized
+  if server.capabilities.tools.isNone:
+    server.capabilities.tools = some(McpToolsCapability())
+
+proc ensureResourcesCapability(server: McpServer) =
+  ## Ensure resources capability is initialized
+  if server.capabilities.resources.isNone:
+    server.capabilities.resources = some(McpResourcesCapability())
+
+proc ensurePromptsCapability(server: McpServer) =
+  ## Ensure prompts capability is initialized
+  if server.capabilities.prompts.isNone:
+    server.capabilities.prompts = some(McpPromptsCapability())
+
+# Registration functions (consolidated with validation)
 proc registerTool*(server: McpServer, tool: McpTool, handler: McpToolHandler) =
   ## Register a tool with its handler function.
-  if tool.name.len == 0:
-    raise newException(ValueError, "Tool name cannot be empty")
+  validateRegistration("Tool", tool.name)
   if handler == nil:
     raise newException(ValueError, "Tool handler cannot be nil")
-  
+
   withLock toolsLock:
     server.tools[tool.name] = tool
     server.toolHandlers[tool.name] = handler
-  
-  if server.capabilities.tools.isNone:
-    server.capabilities.tools = some(McpToolsCapability())
+
+  server.ensureToolsCapability()
+  server.logger.debug("Registered tool", context = {"toolName": %tool.name}.toTable)
 
 proc registerToolWithContext*(server: McpServer, tool: McpTool, handler: McpToolHandlerWithContext) =
   ## Register a context-aware tool with its handler function.
-  if tool.name.len == 0:
-    raise newException(ValueError, "Tool name cannot be empty")
+  validateRegistration("Tool", tool.name)
   if handler == nil:
     raise newException(ValueError, "Tool handler cannot be nil")
-  
+
   withLock toolsLock:
     server.tools[tool.name] = tool
     server.contextAwareToolHandlers[tool.name] = handler
-  
-  if server.capabilities.tools.isNone:
-    server.capabilities.tools = some(McpToolsCapability())
+
+  server.ensureToolsCapability()
 
 proc registerResource*(server: McpServer, resource: McpResource, handler: McpResourceHandler) =
   ## Register a resource with its handler function.
-  if resource.uri.len == 0:
-    raise newException(ValueError, "Resource URI cannot be empty")
+  validateRegistration("Resource", resource.uri)
   if handler == nil:
     raise newException(ValueError, "Resource handler cannot be nil")
-  
+
   withLock resourcesLock:
     server.resources[resource.uri] = resource
     server.resourceHandlers[resource.uri] = handler
-  
-  if server.capabilities.resources.isNone:
-    server.capabilities.resources = some(McpResourcesCapability())
+
+  server.ensureResourcesCapability()
 
 proc registerResourceWithContext*(server: McpServer, resource: McpResource, handler: McpResourceHandlerWithContext) =
   ## Register a context-aware resource with its handler function.
-  if resource.uri.len == 0:
-    raise newException(ValueError, "Resource URI cannot be empty")
+  validateRegistration("Resource", resource.uri)
   if handler == nil:
     raise newException(ValueError, "Resource handler cannot be nil")
-  
+
   withLock resourcesLock:
     server.resources[resource.uri] = resource
     server.contextAwareResourceHandlers[resource.uri] = handler
-  
-  if server.capabilities.resources.isNone:
-    server.capabilities.resources = some(McpResourcesCapability())
+
+  server.ensureResourcesCapability()
 
 proc registerPrompt*(server: McpServer, prompt: McpPrompt, handler: McpPromptHandler) =
   ## Register a prompt with its handler function.
-  if prompt.name.len == 0:
-    raise newException(ValueError, "Prompt name cannot be empty")
+  validateRegistration("Prompt", prompt.name)
   if handler == nil:
     raise newException(ValueError, "Prompt handler cannot be nil")
-  
+
   withLock promptsLock:
     server.prompts[prompt.name] = prompt
     server.promptHandlers[prompt.name] = handler
-  
-  if server.capabilities.prompts.isNone:
-    server.capabilities.prompts = some(McpPromptsCapability())
+
+  server.ensurePromptsCapability()
 
 proc registerPromptWithContext*(server: McpServer, prompt: McpPrompt, handler: McpPromptHandlerWithContext) =
   ## Register a context-aware prompt with its handler function.
-  if prompt.name.len == 0:
-    raise newException(ValueError, "Prompt name cannot be empty")
+  validateRegistration("Prompt", prompt.name)
   if handler == nil:
     raise newException(ValueError, "Prompt handler cannot be nil")
-  
+
   withLock promptsLock:
     server.prompts[prompt.name] = prompt
     server.contextAwarePromptHandlers[prompt.name] = handler
-  
-  if server.capabilities.prompts.isNone:
-    server.capabilities.prompts = some(McpPromptsCapability())
+
+  server.ensurePromptsCapability()
+
+proc registerResourceTemplate*(server: McpServer, resourceTemplate: McpResourceTemplate, handler: ResourceTemplateHandler) =
+  ## Register a resource template with its handler function.
+  validateRegistration("Resource template", resourceTemplate.uriTemplate)
+  if handler == nil:
+    raise newException(ValueError, "Resource template handler cannot be nil")
+
+  server.resourceTemplates.registerTemplate(resourceTemplate, handler)
+  server.ensureResourcesCapability()
+
+proc registerResourceTemplateWithContext*(server: McpServer, resourceTemplate: McpResourceTemplate, handler: ResourceTemplateHandlerWithContext) =
+  ## Register a context-aware resource template with its handler function.
+  validateRegistration("Resource template", resourceTemplate.uriTemplate)
+  if handler == nil:
+    raise newException(ValueError, "Resource template handler cannot be nil")
+
+  server.resourceTemplates.registerTemplateWithContext(resourceTemplate, handler)
+  server.ensureResourcesCapability()
+
+# UFCS Fluent API Extensions
+# These functions enable method call syntax for more fluent server configuration
+
+proc withTool*(server: McpServer, tool: McpTool, handler: McpToolHandler): McpServer =
+  ## Fluent API: Register a tool and return the server for chaining
+  server.registerTool(tool, handler)
+  server
+
+proc withToolContext*(server: McpServer, tool: McpTool, handler: McpToolHandlerWithContext): McpServer =
+  ## Fluent API: Register a context-aware tool and return the server for chaining
+  server.registerToolWithContext(tool, handler)
+  server
+
+proc withResource*(server: McpServer, resource: McpResource, handler: McpResourceHandler): McpServer =
+  ## Fluent API: Register a resource and return the server for chaining
+  server.registerResource(resource, handler)
+  server
+
+proc withResourceContext*(server: McpServer, resource: McpResource, handler: McpResourceHandlerWithContext): McpServer =
+  ## Fluent API: Register a context-aware resource and return the server for chaining
+  server.registerResourceWithContext(resource, handler)
+  server
+
+proc withPrompt*(server: McpServer, prompt: McpPrompt, handler: McpPromptHandler): McpServer =
+  ## Fluent API: Register a prompt and return the server for chaining
+  server.registerPrompt(prompt, handler)
+  server
+
+proc withPromptContext*(server: McpServer, prompt: McpPrompt, handler: McpPromptHandlerWithContext): McpServer =
+  ## Fluent API: Register a context-aware prompt and return the server for chaining
+  server.registerPromptWithContext(prompt, handler)
+  server
+
+proc withResourceTemplate*(server: McpServer, resourceTemplate: McpResourceTemplate, handler: ResourceTemplateHandler): McpServer =
+  ## Fluent API: Register a resource template and return the server for chaining
+  server.registerResourceTemplate(resourceTemplate, handler)
+  server
+
+proc withResourceTemplateContext*(server: McpServer, resourceTemplate: McpResourceTemplate, handler: ResourceTemplateHandlerWithContext): McpServer =
+  ## Fluent API: Register a context-aware resource template and return the server for chaining
+  server.registerResourceTemplateWithContext(resourceTemplate, handler)
+  server
+
+# Alternative UFCS style: object.registerWith(server, handler)
+
+proc registerWith*(tool: McpTool, server: McpServer, handler: McpToolHandler): McpServer =
+  ## UFCS: Register this tool with the server
+  server.registerTool(tool, handler)
+  server
+
+proc registerWithContext*(tool: McpTool, server: McpServer, handler: McpToolHandlerWithContext): McpServer =
+  ## UFCS: Register this tool with context support with the server
+  server.registerToolWithContext(tool, handler)
+  server
+
+proc registerWith*(resource: McpResource, server: McpServer, handler: McpResourceHandler): McpServer =
+  ## UFCS: Register this resource with the server
+  server.registerResource(resource, handler)
+  server
+
+proc registerWithContext*(resource: McpResource, server: McpServer, handler: McpResourceHandlerWithContext): McpServer =
+  ## UFCS: Register this resource with context support with the server
+  server.registerResourceWithContext(resource, handler)
+  server
+
+proc registerWith*(prompt: McpPrompt, server: McpServer, handler: McpPromptHandler): McpServer =
+  ## UFCS: Register this prompt with the server
+  server.registerPrompt(prompt, handler)
+  server
+
+proc registerWithContext*(prompt: McpPrompt, server: McpServer, handler: McpPromptHandlerWithContext): McpServer =
+  ## UFCS: Register this prompt with context support with the server
+  server.registerPromptWithContext(prompt, handler)
+  server
+
+proc registerWith*(resourceTemplate: McpResourceTemplate, server: McpServer, handler: ResourceTemplateHandler): McpServer =
+  ## UFCS: Register this resource template with the server
+  server.registerResourceTemplate(resourceTemplate, handler)
+  server
+
+proc registerWithContext*(resourceTemplate: McpResourceTemplate, server: McpServer, handler: ResourceTemplateHandlerWithContext): McpServer =
+  ## UFCS: Register this resource template with context support with the server
+  server.registerResourceTemplateWithContext(resourceTemplate, handler)
+  server
 
 # Middleware management
 proc registerMiddleware*(server: McpServer, middleware: McpMiddleware) =
@@ -173,11 +320,36 @@ proc enableContextLogging*(server: McpServer, enable: bool = true) =
 
 proc getRequestTimeout*(server: McpServer): int =
   ## Get current request timeout
-  return server.requestTimeout
+  server.requestTimeout
 
 proc isContextLoggingEnabled*(server: McpServer): bool =
   ## Check if context logging is enabled
-  return server.enableContextLogging
+  server.enableContextLogging
+
+# Logging configuration methods
+proc setLogger*(server: McpServer, logger: Logger) =
+  ## Set a custom logger for the server
+  server.logger = logger
+
+proc getLogger*(server: McpServer): Logger =
+  ## Get the server's logger
+  server.logger
+
+proc setLogLevel*(server: McpServer, level: LogLevel) =
+  ## Set the minimum log level for the server
+  server.logger.setMinLevel(level)
+
+proc addLogHandler*(server: McpServer, handler: LogHandler) =
+  ## Add a log handler to the server's logger
+  server.logger.addHandler(handler)
+
+proc enableFileLogging*(server: McpServer, filename: string) =
+  ## Enable file logging for the server
+  server.logger.addHandler(fileHandler(filename))
+
+proc enableJSONLogging*(server: McpServer) =
+  ## Enable JSON structured logging for the server
+  server.logger.addHandler(jsonHandler)
 
 # Utility methods for server management
 proc getRegisteredToolNames*(server: McpServer): seq[string] =
@@ -217,14 +389,14 @@ proc getServerStats*(server: McpServer): Table[string, JsonNode] =
 # Core message handlers (same logic as original server)
 proc handleInitialize(server: McpServer, params: JsonNode): JsonNode {.gcsafe.} =
   server.initialized = true
-  return createInitializeResponse(server.serverInfo, server.capabilities)
+  return createInitializeResponseJson(server.serverInfo, server.capabilities)
 
 proc handleToolsList(server: McpServer): JsonNode {.gcsafe.} =
   var tools: seq[McpTool] = @[]
   withLock toolsLock:
     for tool in server.tools.values:
       tools.add(tool)
-  return createToolsListResponse(tools)
+  return createToolsListResponseJson(tools)
 
 proc handleToolsCall(server: McpServer, params: JsonNode, ctx: McpRequestContext = nil): JsonNode {.gcsafe.} =
   if not params.hasKey("name"):
@@ -263,7 +435,23 @@ proc handleToolsCall(server: McpServer, params: JsonNode, ctx: McpRequestContext
     else:
       regularHandler(args)
     
-    return parseJson(toJson(res))
+    # Create response manually to avoid GC safety issues  
+    var responseJson = newJObject()
+    responseJson["content"] = newJArray()
+    for content in res.content:
+      var contentJson = newJObject()
+      contentJson["type"] = newJString(content.`type`)
+      case content.kind:
+      of TextContent:
+        contentJson["text"] = newJString(content.text)
+      of ImageContent:
+        contentJson["data"] = newJString(content.data)
+        contentJson["mimeType"] = newJString(content.mimeType)
+      of ResourceContent:
+        # Skip resource content for now to avoid more GC safety issues
+        discard
+      responseJson["content"].add(contentJson)
+    return responseJson
   except RequestCancellation:
     raise newException(ValueError, "Tool execution cancelled for '" & toolName & "'")
   except RequestTimeout:
@@ -276,7 +464,7 @@ proc handleResourcesList(server: McpServer): JsonNode {.gcsafe.} =
   withLock resourcesLock:
     for resource in server.resources.values:
       resources.add(resource)
-  return createResourcesListResponse(resources)
+  return createResourcesListResponseJson(resources)
 
 proc handleResourcesRead(server: McpServer, params: JsonNode, ctx: McpRequestContext = nil): JsonNode {.gcsafe.} =
   if not params.hasKey("uri"):
@@ -298,6 +486,48 @@ proc handleResourcesRead(server: McpServer, params: JsonNode, ctx: McpRequestCon
     elif uri in server.resourceHandlers:
       regularHandler = server.resourceHandlers[uri]
       hasRegularHandler = true
+  
+  # If no direct handler found, try resource templates
+  if not hasContextHandler and not hasRegularHandler:
+    let requestCtx = if ctx != nil: ctx else: newMcpRequestContext()
+    let templateResult = server.resourceTemplates.handleTemplateRequestWithContext(requestCtx, uri)
+    if templateResult.isSome:
+      # Create response manually to avoid GC safety issues
+      let res = templateResult.get()
+      var responseJson = newJObject()
+      responseJson["content"] = newJArray()
+      for content in res.content:
+        var contentJson = newJObject()
+        contentJson["type"] = newJString(content.`type`)
+        case content.kind:
+        of TextContent:
+          contentJson["text"] = newJString(content.text)
+        of ImageContent:
+          contentJson["data"] = newJString(content.data)
+          contentJson["mimeType"] = newJString(content.mimeType)
+        of ResourceContent:
+          # Serialize the nested resource contents
+          var resourceJson = newJObject()
+          resourceJson["uri"] = newJString(content.resource.uri)
+          if content.resource.mimeType.isSome:
+            resourceJson["mimeType"] = newJString(content.resource.mimeType.get)
+          resourceJson["content"] = newJArray()
+          for nestedContent in content.resource.content:
+            var nestedContentJson = newJObject()
+            nestedContentJson["type"] = newJString(nestedContent.`type`)
+            case nestedContent.kind:
+            of TextContent:
+              nestedContentJson["text"] = newJString(nestedContent.text)
+            of ImageContent:
+              nestedContentJson["data"] = newJString(nestedContent.data)
+              nestedContentJson["mimeType"] = newJString(nestedContent.mimeType)
+            of ResourceContent:
+              # Avoid infinite recursion - just include URI for nested resources
+              nestedContentJson["uri"] = newJString(nestedContent.resource.uri)
+            resourceJson["content"].add(nestedContentJson)
+          contentJson["resource"] = resourceJson
+        responseJson["content"].add(contentJson)
+      return responseJson
     else:
       raise newException(ValueError, "Resource not found: " & uri)
   
@@ -312,7 +542,26 @@ proc handleResourcesRead(server: McpServer, params: JsonNode, ctx: McpRequestCon
     else:
       regularHandler(uri)
     
-    return parseJson(toJson(res))
+    # Create response manually to avoid GC safety issues
+    var responseJson = newJObject()
+    responseJson["uri"] = newJString(res.uri)
+    if res.mimeType.isSome:
+      responseJson["mimeType"] = newJString(res.mimeType.get)
+    responseJson["content"] = newJArray()
+    for content in res.content:
+      var contentJson = newJObject()
+      contentJson["type"] = newJString(content.`type`)
+      case content.kind:
+      of TextContent:
+        contentJson["text"] = newJString(content.text)
+      of ImageContent:
+        contentJson["data"] = newJString(content.data)
+        contentJson["mimeType"] = newJString(content.mimeType)
+      of ResourceContent:
+        # Skip resource content for now to avoid more GC safety issues
+        discard
+      responseJson["content"].add(contentJson)
+    return responseJson
   except RequestCancellation:
     raise newException(ValueError, "Resource access cancelled for '" & uri & "'")
   except RequestTimeout:
@@ -325,7 +574,7 @@ proc handlePromptsList(server: McpServer): JsonNode {.gcsafe.} =
   withLock promptsLock:
     for prompt in server.prompts.values:
       prompts.add(prompt)
-  return createPromptsListResponse(prompts)
+  return createPromptsListResponseJson(prompts)
 
 proc handlePromptsGet(server: McpServer, params: JsonNode, ctx: McpRequestContext = nil): JsonNode {.gcsafe.} =
   if not params.hasKey("name"):
@@ -366,7 +615,33 @@ proc handlePromptsGet(server: McpServer, params: JsonNode, ctx: McpRequestContex
     else:
       regularHandler(promptName, args)
     
-    return parseJson(toJson(res))
+    # Create response manually to avoid GC safety issues
+    var responseJson = newJObject()
+    if res.description.isSome:
+      responseJson["description"] = newJString(res.description.get)
+    responseJson["messages"] = newJArray()
+    for message in res.messages:
+      var messageJson = newJObject()
+      messageJson["role"] = newJString($message.role)
+      var contentJson = newJObject()
+      let content = message.content
+      contentJson["type"] = newJString(content.`type`)
+      case content.kind:
+      of TextContent:
+        contentJson["text"] = newJString(content.text)
+      of ImageContent:
+        contentJson["data"] = newJString(content.data)
+        contentJson["mimeType"] = newJString(content.mimeType)
+      of ResourceContent:
+        # Serialize the nested resource contents
+        var resourceJson = newJObject()
+        resourceJson["uri"] = newJString(content.resource.uri)
+        if content.resource.mimeType.isSome:
+          resourceJson["mimeType"] = newJString(content.resource.mimeType.get)
+        contentJson["resource"] = resourceJson
+      messageJson["content"] = contentJson
+      responseJson["messages"].add(messageJson)
+    return responseJson
   except RequestCancellation:
     raise newException(ValueError, "Prompt execution cancelled for '" & promptName & "'")
   except RequestTimeout:
@@ -412,7 +687,8 @@ proc processMiddlewareResponse(server: McpServer, ctx: McpRequestContext, respon
 proc handleRequest*(server: McpServer, request: JsonRpcRequest): JsonRpcResponse {.gcsafe.} =
   if request.id.isNone:
     server.handleNotification(request)
-    return JsonRpcResponse()
+    result = JsonRpcResponse()
+    return
   
   let id = request.id.get
   let requestId = if id.kind == jridString: id.str else: $id.num
@@ -425,9 +701,10 @@ proc handleRequest*(server: McpServer, request: JsonRpcRequest): JsonRpcResponse
     let processedRequest = server.processMiddleware(ctx, request)
     
     if processedRequest.`method` != "initialize" and not server.initialized:
-      let error = newMcpStructuredError(McpServerNotInitialized, melError, 
+      let error = newMcpStructuredError(McpServerNotInitialized, melError,
         "Server must be initialized before calling " & processedRequest.`method`, requestId = ctx.requestId)
-      return JsonRpcResponse(jsonrpc: "2.0", id: id, error: some(error.toJsonRpcError()))
+      result = JsonRpcResponse(jsonrpc: "2.0", id: id, error: some(error.toJsonRpcError()))
+      return
     
     # Check for cancellation
     ctx.ensureNotCancelled()
@@ -448,10 +725,11 @@ proc handleRequest*(server: McpServer, request: JsonRpcRequest): JsonRpcResponse
       of "prompts/get":
         server.handlePromptsGet(processedRequest.params.get(newJObject()), ctx)
       else:
-        let error = newMcpStructuredError(MethodNotFound, melError, 
+        let error = newMcpStructuredError(MethodNotFound, melError,
           "Method not found: " & processedRequest.`method`, requestId = ctx.requestId)
-        return JsonRpcResponse(jsonrpc: "2.0", id: id, error: some(error.toJsonRpcError()))
-    
+        result = JsonRpcResponse(jsonrpc: "2.0", id: id, error: some(error.toJsonRpcError()))
+        return
+
     let response = createJsonRpcResponse(id, res)
     return server.processMiddlewareResponse(ctx, response)
     
@@ -541,3 +819,146 @@ proc runStdio*(server: McpServer) =
 
   # Wait for all remaining tasks and shutdown
   server.shutdown()
+
+# Server Composition and Mounting functionality
+proc newMountPoint*(path: string, server: McpServer, prefix: Option[string] = none(string)): MountPoint =
+  ## Create a new mount point
+  MountPoint(
+    path: path,
+    server: server,  # Direct ref assignment instead of unsafe pointer cast
+    prefix: prefix
+  )
+
+proc newComposedServer*(name: string, version: string, numThreads: int = 0): ComposedServer =
+  ## Create a new composed server that can mount other servers
+  let mainServer = newMcpServer(name, version, numThreads)
+  ComposedServer(
+    mainServer: mainServer,  # Direct ref assignment instead of unsafe pointer cast
+    mountPoints: @[],
+    pathMappings: initTable[string, MountPoint]()
+  )
+
+proc getMainServer*(composed: ComposedServer): McpServer =
+  ## Get the main server from a composed server
+  composed.mainServer  # Direct ref access instead of unsafe pointer cast
+
+proc getMountedServer*(mountPoint: MountPoint): McpServer =
+  ## Get the server from a mount point
+  mountPoint.server  # Direct ref access instead of unsafe pointer cast
+
+proc mountServer*(composed: ComposedServer, mountPoint: MountPoint) =
+  ## Mount a server at the specified mount point
+  if mountPoint.path in composed.pathMappings:
+    raise newException(ValueError, "Mount point already exists: " & mountPoint.path)
+  
+  composed.mountPoints.add(mountPoint)
+  composed.pathMappings[mountPoint.path] = mountPoint
+
+proc mountServerAt*(composed: ComposedServer, path: string, server: McpServer, prefix: Option[string] = none(string)) =
+  ## Mount a server at the specified path with optional prefix
+  let mountPoint = newMountPoint(path, server, prefix)
+  composed.mountServer(mountPoint)
+
+proc unmountServer*(composed: ComposedServer, path: string): bool =
+  ## Unmount a server from the specified path, returns true if unmounted
+  if path notin composed.pathMappings:
+    result = false
+    return
+
+  composed.pathMappings.del(path)
+
+  # Remove from mountPoints sequence
+  for i in countdown(composed.mountPoints.len - 1, 0):
+    if composed.mountPoints[i].path == path:
+      composed.mountPoints.del(i)
+      break
+
+  return true
+
+proc findMountPointForTool*(composed: ComposedServer, toolName: string): Option[MountPoint] =
+  ## Find the mount point that should handle a given tool name
+  for mountPoint in composed.mountPoints:
+    if mountPoint.prefix.isSome:
+      let prefix = mountPoint.prefix.get()
+      if toolName.startsWith(prefix):
+        result = some(mountPoint)
+        return
+    else:
+      # Check if the mounted server has this tool
+      let server = getMountedServer(mountPoint)
+      let tools = server.getRegisteredToolNames()
+      if toolName in tools:
+        result = some(mountPoint)
+        return
+
+  return none(MountPoint)
+
+proc findMountPointForResource*(composed: ComposedServer, uri: string): Option[MountPoint] =
+  ## Find the mount point that should handle a given resource URI
+  for mountPoint in composed.mountPoints:
+    if mountPoint.prefix.isSome:
+      let prefix = mountPoint.prefix.get()
+      if uri.startsWith(mountPoint.path) or uri.startsWith(prefix):
+        result = some(mountPoint)
+        return
+    else:
+      # Check if the mounted server has this resource
+      let server = getMountedServer(mountPoint)
+      let resources = server.getRegisteredResourceUris()
+      if uri in resources:
+        result = some(mountPoint)
+        return
+
+  return none(MountPoint)
+
+proc findMountPointForPrompt*(composed: ComposedServer, promptName: string): Option[MountPoint] =
+  ## Find the mount point that should handle a given prompt name
+  for mountPoint in composed.mountPoints:
+    if mountPoint.prefix.isSome:
+      let prefix = mountPoint.prefix.get()
+      if promptName.startsWith(prefix):
+        return some(mountPoint)
+    else:
+      # Check if the mounted server has this prompt
+      let server = getMountedServer(mountPoint)
+      let prompts = server.getRegisteredPromptNames()
+      if promptName in prompts:
+        return some(mountPoint)
+  
+  return none(MountPoint)
+
+proc stripPrefix*(name: string, prefix: Option[string]): string =
+  ## Strip prefix from a name if present
+  if prefix.isSome:
+    let prefixStr = prefix.get()
+    if name.startsWith(prefixStr):
+      return name[prefixStr.len..^1]
+  return name
+
+proc addPrefix*(name: string, prefix: Option[string]): string =
+  ## Add prefix to a name if specified
+  if prefix.isSome:
+    return prefix.get() & name
+  return name
+
+proc listMountPoints*(composed: ComposedServer): seq[MountPoint] =
+  ## List all mount points
+  return composed.mountPoints
+
+proc getMountedServerInfo*(composed: ComposedServer): Table[string, JsonNode] =
+  ## Get information about all mounted servers
+  result = initTable[string, JsonNode]()
+  
+  for mountPoint in composed.mountPoints:
+    let server = getMountedServer(mountPoint)
+    var info = newJObject()
+    info["path"] = %mountPoint.path
+    info["serverName"] = %server.serverInfo.name
+    info["serverVersion"] = %server.serverInfo.version
+    if mountPoint.prefix.isSome:
+      info["prefix"] = %mountPoint.prefix.get()
+    info["toolCount"] = %server.getRegisteredToolNames().len
+    info["resourceCount"] = %server.getRegisteredResourceUris().len
+    info["promptCount"] = %server.getRegisteredPromptNames().len
+    
+    result[mountPoint.path] = info
