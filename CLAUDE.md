@@ -276,3 +276,11 @@ proc handleToolCall(params: JsonNode): JsonNode =
 
 ## Development Best Practices
 - Always end todolists by running all the tests at the end to verify everything compiles and works
+
+### Async and Concurrency Guidelines
+- **DO NOT USE `asyncdispatch`** - This project explicitly avoids asyncdispatch for concurrency
+- Use **`taskpools`** for concurrent processing and background tasks
+- Use **synchronous I/O** with taskpools rather than async/await patterns
+- For HTTP/WebSocket transports, use Mummy's built-in async capabilities but avoid introducing asyncdispatch dependencies
+- All concurrent operations should be implemented using taskpools and synchronous patterns for stdio transport
+- Real-time capabilities are provided via WebSocket transport using Mummy's built-in WebSocket support
