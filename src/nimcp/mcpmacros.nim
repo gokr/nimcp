@@ -1,9 +1,9 @@
 ## Powerful macros for easy MCP server creation
 
-import macros, json, tables, options, strutils, typetraits
-import types, server, protocol, mummy_transport
+import macros, json, tables, options, strutils, typetraits, sequtils, times
+import types, server, protocol, mummy_transport, websocket_transport
 
-# Helper to convert Nim types to JSON schema types
+# Enhanced helper to convert Nim types to JSON schema types with support for more types
 proc nimTypeToJsonSchema(nimType: NimNode): JsonNode =
   case nimType.kind:
   of nnkIdent:
@@ -25,16 +25,46 @@ proc nimTypeToJsonSchema(nimType: NimNode): JsonNode =
       result = newJObject()
       result["type"] = newJString("boolean")
     else:
+      # Try to handle as object type
       result = newJObject()
-      result["type"] = newJString("string")  # Default fallback
+      result["type"] = newJString("object")
+      result["description"] = newJString("Custom type: " & $nimType)
   of nnkBracketExpr:
-    if nimType[0].kind == nnkIdent and $nimType[0] == "seq":
-      result = newJObject()
-      result["type"] = newJString("array")
-      result["items"] = nimTypeToJsonSchema(nimType[1])
+    if nimType[0].kind == nnkIdent:
+      case $nimType[0]:
+      of "seq":
+        result = newJObject()
+        result["type"] = newJString("array")
+        result["items"] = nimTypeToJsonSchema(nimType[1])
+      of "Option":
+        # Optional type - make the inner type nullable
+        result = nimTypeToJsonSchema(nimType[1])
+        if result.hasKey("type"):
+          let innerType = result["type"].getStr()
+          result["anyOf"] = %[%*{"type": innerType}, %*{"type": "null"}]
+          result.delete("type")
+      of "set":
+        result = newJObject()
+        result["type"] = newJString("array")
+        result["uniqueItems"] = newJBool(true)
+        result["items"] = nimTypeToJsonSchema(nimType[1])
+      else:
+        result = newJObject()
+        result["type"] = newJString("object")
+        result["description"] = newJString("Generic type: " & $nimType[0])
     else:
       result = newJObject()
       result["type"] = newJString("string")  # Default fallback
+  of nnkTupleConstr, nnkTupleTy:
+    # Tuple type - represent as object
+    result = newJObject()
+    result["type"] = newJString("object")
+    result["description"] = newJString("Tuple type")
+  of nnkObjectTy, nnkRefTy:
+    # Object type
+    result = newJObject()
+    result["type"] = newJString("object")
+    result["description"] = newJString("Object type")
   else:
     result = newJObject()
     result["type"] = newJString("string")  # Default fallback
@@ -67,6 +97,47 @@ proc generateInputSchema(params: NimNode): JsonNode =
   result["properties"] = properties
   result["required"] = required
 
+# Generate wrapper code that extracts arguments from JSON and calls the original proc
+proc generateArgumentExtraction(params: NimNode, procName: NimNode): NimNode =
+  result = newStmtList()
+  
+  # Skip first param (return type) and generate extraction for each parameter
+  for i in 1..<params.len:
+    let param = params[i]
+    if param.kind == nnkIdentDefs:
+      let paramType = param[^2]  # Type is second to last
+      for j in 0..<param.len-2:  # All names except type and default value
+        let paramName = param[j]
+        let paramNameStr = $paramName
+        
+        # Generate type-safe extraction based on parameter type
+        let extraction = case $paramType:
+          of "int", "int8", "int16", "int32", "int64":
+            quote do:
+              let `paramName` = args[`paramNameStr`].getInt()
+          of "uint", "uint8", "uint16", "uint32", "uint64":
+            quote do:
+              let `paramName` = args[`paramNameStr`].getInt().uint
+          of "float", "float32", "float64":
+            quote do:
+              let `paramName` = args[`paramNameStr`].getFloat()
+          of "string":
+            quote do:
+              let `paramName` = args[`paramNameStr`].getStr()
+          of "bool":
+            quote do:
+              let `paramName` = args[`paramNameStr`].getBool()
+          else:
+            # Handle seq types and complex types
+            if paramType.kind == nnkBracketExpr and $paramType[0] == "seq":
+              quote do:
+                let `paramName` = args[`paramNameStr`].getElems().mapIt(it.getStr())
+            else:
+              quote do:
+                let `paramName` = $args[`paramNameStr`]
+        
+        result.add(extraction)
+
 # Advanced macro for introspecting proc signatures and auto-generating tools
 macro mcpTool*(procDef: untyped): untyped =
   # Handle both direct proc def and block containing proc def
@@ -80,6 +151,7 @@ macro mcpTool*(procDef: untyped): untyped =
   
   let procName = actualProcDef[0]
   let params = actualProcDef[3]  # Parameters
+  let body = actualProcDef[6]     # Body
   
   # Extract tool name from proc name
   let toolName = $procName
@@ -97,7 +169,37 @@ macro mcpTool*(procDef: untyped): untyped =
   # Convert the compile-time schema to a runtime string representation
   let schemaStr = $inputSchema
   
-  result = quote do:
+  # Generate argument extraction code
+  let argumentExtraction = generateArgumentExtraction(params, procName)
+  
+  # Build parameter list for calling the original proc
+  var callArgs = newSeq[NimNode]()
+  for i in 1..<params.len:
+    let param = params[i]
+    if param.kind == nnkIdentDefs:
+      for j in 0..<param.len-2:
+        callArgs.add(param[j])
+  
+  # Generate the call to the original procedure
+  let procCall = if callArgs.len > 0:
+    newCall(procName, callArgs)
+  else:
+    newCall(procName)
+  
+  # Check if the proc is async (returns Future)
+  let isAsync = if params.len > 0 and params[0].kind == nnkIdentDefs:
+    let returnType = params[0][^2]
+    returnType.kind == nnkBracketExpr and $returnType[0] == "Future"
+  else:
+    false
+  
+  result = newStmtList()
+  
+  # Add the original proc definition first
+  result.add(actualProcDef)
+  
+  # Create tool definition and wrapper
+  result.add(quote do:
     # Create the tool definition - parse schema at runtime
     let tool = McpTool(
       name: `toolName`,
@@ -107,14 +209,98 @@ macro mcpTool*(procDef: untyped): untyped =
     
     # Create wrapper that calls the actual proc with proper argument extraction
     proc `wrapperName`(args: JsonNode): McpToolResult =
-      # This is a placeholder - the actual implementation would extract args and call the proc
-      return McpToolResult(content: @[createTextContent("Tool " & `toolName` & " called with: " & $args)])
+      try:
+        # Validate that all required arguments are present
+        if args.kind != JObject:
+          return McpToolResult(content: @[createTextContent("Error: Arguments must be a JSON object")])
+        
+        # Extract arguments with type conversion
+        `argumentExtraction`
+        
+        # Call the original procedure
+        let result = `procCall`
+        return McpToolResult(content: @[createTextContent($result)])
+          
+      except JsonKindError as e:
+        return McpToolResult(content: @[createTextContent("Error: Invalid argument type - " & e.msg)])
+      except KeyError as e:
+        return McpToolResult(content: @[createTextContent("Error: Missing required argument - " & e.msg)])
+      except Exception as e:
+        return McpToolResult(content: @[createTextContent("Error: " & e.msg)])
     
     # Register the tool using the global server instance
     currentMcpServer.registerTool(tool, `wrapperName`)
+  )
+
+# Context-aware tool macro for tools that need request context
+macro mcpToolWithContext*(procDef: untyped): untyped =
+  # Similar to mcpTool but generates context-aware wrapper
+  var actualProcDef: NimNode
+  if procDef.kind == nnkStmtList and procDef.len > 0 and procDef[0].kind == nnkProcDef:
+    actualProcDef = procDef[0]
+  elif procDef.kind == nnkProcDef:
+    actualProcDef = procDef
+  else:
+    error("Expected a proc definition", procDef)
   
-  # Return the original proc definition unchanged so it can be used normally
-  # Note: actualProcDef is already part of the input, so we don't add it again
+  let procName = actualProcDef[0]
+  let params = actualProcDef[3]
+  
+  # Verify first parameter is McpRequestContext
+  if params.len < 2 or $params[1][^2] != "McpRequestContext":
+    error("Context-aware tools must have McpRequestContext as first parameter", procDef)
+  
+  let toolName = $procName
+  let docComment = extractDocComment(actualProcDef).splitLines()[0].strip()
+  let description = if docComment.len > 0: docComment else: "Auto-generated context-aware tool: " & toolName
+  
+  # Generate schema excluding the context parameter
+  var modifiedParams = newNimNode(nnkFormalParams)
+  modifiedParams.add(params[0])  # Return type
+  for i in 2..<params.len:  # Skip context parameter
+    modifiedParams.add(params[i])
+  
+  let inputSchema = generateInputSchema(modifiedParams)
+  let wrapperName = ident("tool_" & toolName & "_context_wrapper")
+  let schemaStr = $inputSchema
+  
+  # Generate argument extraction excluding context
+  let argumentExtraction = generateArgumentExtraction(modifiedParams, procName)
+  
+  # Build call args including context
+  var callArgs = @[ident("ctx")]
+  for i in 2..<params.len:
+    let param = params[i]
+    if param.kind == nnkIdentDefs:
+      for j in 0..<param.len-2:
+        callArgs.add(param[j])
+  
+  let procCall = newCall(procName, callArgs)
+  
+  result = newStmtList()
+  result.add(actualProcDef)
+  
+  result.add(quote do:
+    let tool = McpTool(
+      name: `toolName`,
+      description: some(`description`),
+      inputSchema: parseJson(`schemaStr`)
+    )
+    
+    proc `wrapperName`(args: JsonNode): McpToolResult =
+      try:
+        let ctx = newMcpRequestContext()
+        if args.kind != JObject:
+          return McpToolResult(content: @[createTextContent("Error: Arguments must be a JSON object")])
+        
+        `argumentExtraction`
+        let result = `procCall`
+        return McpToolResult(content: @[createTextContent($result)])
+      except Exception as e:
+        return McpToolResult(content: @[createTextContent("Error: " & e.msg)])
+    
+    currentMcpServer.registerTool(tool, `wrapperName`)
+  )
 
 # Global server instance for macro access 
 # WARNING: This is internal to the macro system - users should not access this directly
@@ -136,6 +322,12 @@ template mcpServer*(name: string, version: string, body: untyped): untyped =
                       else:
                         newAuthConfig()
       mcpServerInstance.runHttp(transport.port, transport.host, authConfig)
+    of mtWebSocket:
+      let authConfig = if transport.wsTokenValidator != nil:
+                        newAuthConfig(transport.wsTokenValidator, transport.wsRequireHttps)
+                      else:
+                        newAuthConfig()
+      mcpServerInstance.runWebSocket(transport.wsPort, transport.wsHost, authConfig)
 
 
 # Simple resource registration template  
