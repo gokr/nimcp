@@ -1,9 +1,26 @@
-docs
-tests/test_simple_server
-tests/test_basic
-tests/test_calculator_server
-examples/calculator_server
-examples/macro_calculator
-examples/macro_mummy_calculator
-examples/mummy_calculator
-examples/simple_server
+# Generated documentation
+docs/
+
+# Compiled Nim binaries
+tests/test_*
+!tests/test_*.nim
+examples/*
+!examples/*.nim
+!examples/README.md
+
+# Build artifacts
+*.o
+*.obj
+*.exe
+nimcache/
+htmldocs/
+
+# IDE files
+.vscode/
+*.swp
+*.swo
+*~
+
+# OS files
+.DS_Store
+Thumbs.db
