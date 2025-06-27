@@ -239,45 +239,28 @@ createFluentApi(withResourceTemplateContext, McpResourceTemplate, ResourceTempla
 
 # Alternative UFCS style: object.registerWith(server, handler)
 
-proc registerWith*(tool: McpTool, server: McpServer, handler: McpToolHandler): McpServer =
-  ## UFCS: Register this tool with the server
-  server.registerTool(tool, handler)
-  server
+# Generic UFCS template to reduce duplication
+template createUfcsApi(itemType: typedesc, handlerType: typedesc, registerProc: untyped): untyped =
+  proc registerWith*(item: itemType, server: McpServer, handler: handlerType): McpServer =
+    ## UFCS: Register this item with the server
+    registerProc(server, item, handler)
+    server
 
-proc registerWithContext*(tool: McpTool, server: McpServer, handler: McpToolHandlerWithContext): McpServer =
-  ## UFCS: Register this tool with context support with the server
-  server.registerToolWithContext(tool, handler)
-  server
+template createUfcsContextApi(itemType: typedesc, handlerType: typedesc, registerProc: untyped): untyped =
+  proc registerWithContext*(item: itemType, server: McpServer, handler: handlerType): McpServer =
+    ## UFCS: Register this item with context support with the server
+    registerProc(server, item, handler)
+    server
 
-proc registerWith*(resource: McpResource, server: McpServer, handler: McpResourceHandler): McpServer =
-  ## UFCS: Register this resource with the server
-  server.registerResource(resource, handler)
-  server
-
-proc registerWithContext*(resource: McpResource, server: McpServer, handler: McpResourceHandlerWithContext): McpServer =
-  ## UFCS: Register this resource with context support with the server
-  server.registerResourceWithContext(resource, handler)
-  server
-
-proc registerWith*(prompt: McpPrompt, server: McpServer, handler: McpPromptHandler): McpServer =
-  ## UFCS: Register this prompt with the server
-  server.registerPrompt(prompt, handler)
-  server
-
-proc registerWithContext*(prompt: McpPrompt, server: McpServer, handler: McpPromptHandlerWithContext): McpServer =
-  ## UFCS: Register this prompt with context support with the server
-  server.registerPromptWithContext(prompt, handler)
-  server
-
-proc registerWith*(resourceTemplate: McpResourceTemplate, server: McpServer, handler: ResourceTemplateHandler): McpServer =
-  ## UFCS: Register this resource template with the server
-  server.registerResourceTemplate(resourceTemplate, handler)
-  server
-
-proc registerWithContext*(resourceTemplate: McpResourceTemplate, server: McpServer, handler: ResourceTemplateHandlerWithContext): McpServer =
-  ## UFCS: Register this resource template with context support with the server
-  server.registerResourceTemplateWithContext(resourceTemplate, handler)
-  server
+# Generate UFCS API functions using the templates
+createUfcsApi(McpTool, McpToolHandler, registerTool)
+createUfcsContextApi(McpTool, McpToolHandlerWithContext, registerToolWithContext)
+createUfcsApi(McpResource, McpResourceHandler, registerResource)
+createUfcsContextApi(McpResource, McpResourceHandlerWithContext, registerResourceWithContext)
+createUfcsApi(McpPrompt, McpPromptHandler, registerPrompt)
+createUfcsContextApi(McpPrompt, McpPromptHandlerWithContext, registerPromptWithContext)
+createUfcsApi(McpResourceTemplate, ResourceTemplateHandler, registerResourceTemplate)
+createUfcsContextApi(McpResourceTemplate, ResourceTemplateHandlerWithContext, registerResourceTemplateWithContext)
 
 # Middleware management
 proc registerMiddleware*(server: McpServer, middleware: McpMiddleware) =
