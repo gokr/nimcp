@@ -42,7 +42,7 @@ nimble build         # Build the package
 - `src/nimcp.nim` - Main module that exports the public API
 - `src/nimcp/types.nim` - Core MCP type definitions
 - `src/nimcp/protocol.nim` - JSON-RPC protocol implementation  
-- `src/nimcp/server.nim` - MCP server implementation
+- `src/nimcp/server.nim` - MCP server implementation that also includes the stdio transport
 - `src/nimcp/mcpmacros.nim` - High-level macro API for easy server creation
 - `src/nimcp/mummy_transport.nim` - HTTP transport implementation
 - `src/nimcp/websocket_transport.nim` - WebSocket transport implementation
@@ -98,12 +98,12 @@ The server handles:
 - Server capability negotiation
 
 **Transport Examples**: 
+- stdio: `examples/calculator_server.nim`
 - HTTP: `examples/macro_mummy_calculator.nim` 
 - WebSocket: `examples/websocket_calculator.nim`
 
 ## Dependencies
-- nim >= 2.0.0
-- json_serialization (JSON handling)
+- You find all dependencies in `nimcp.nimble`
 
 ## Examples
 - `examples/simple_server.nim` - Basic echo and time tools with info resource (stdio)
@@ -122,6 +122,52 @@ The macro API automatically extracts:
 - **Type-safe wrappers** for JSON parameter conversion
 
 ## Coding Guidelines
-- **Variable Naming**:
-  * Do not introduce a local variable called "result" since Nim has such a variable already defined that represents the return value
-  * Always use doc comment with double "##" right below the signature for Nim procs, not above
+
+### Variable Naming
+- Do not introduce a local variable called "result" since Nim has such a variable already defined that represents the return value
+- Always use doc comment with double "##" right below the signature for Nim procs, not above
+
+### Result Variable and Return Statement Style
+Follow these patterns for idiomatic Nim code:
+
+**Single-line functions**: Use direct expression without `result =` assignment
+```nim
+proc getTimeout*(server: McpServer): int =
+  server.requestTimeout
+
+proc `%`*(id: JsonRpcId): JsonNode =
+  case id.kind
+  of jridString: %id.str
+  of jridNumber: %id.num
+```
+
+**Multi-line functions with return at end**: Use `return expression` for clarity
+```nim
+proc handleInitialize(server: McpServer, params: JsonNode): JsonNode =
+  server.initialized = true
+  return createInitializeResponseJson(server.serverInfo, server.capabilities)
+```
+
+**Early exits**: Use `return value` instead of `result = value; return`
+```nim
+proc validateInput(value: string): bool =
+  if value.len == 0:
+    return false
+  # ... more validation
+  true
+```
+
+**Exception handlers**: Use `return expression` for error cases
+```nim
+proc processRequest(): McpToolResult =
+  try:
+    # ... processing
+    McpToolResult(content: @[result])
+  except ValueError:
+    return McpToolResult(content: @[createTextContent("Error: Invalid input")])
+```
+
+**Avoid**: The verbose pattern of `result = value; return` for early exits
+
+## Development Best Practices
+- Always end todolists by running all the tests at the end to verify everything compiles and works
