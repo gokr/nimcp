@@ -11,8 +11,9 @@
 
 - 🚀 **Macro-driven API** - Define servers, tools, resources, and prompts with simple, declarative syntax
 - 📡 **Full MCP Support** - Complete implementation of MCP specification with JSON-RPC 2.0
-- 🌐 **Multiple Transports** - Supports both stdio and HTTP transports (via Mummy web server)
+- 🌐 **Multiple Transports** - Supports stdio, HTTP, and WebSocket transports (via Mummy web server)
 - ⚡ **High Performance** - Efficient implementation with modern taskpools for concurrent processing
+- 🔗 **Real-time Communication** - WebSocket support for bidirectional, low-latency communication
 - 🛠️ **Type Safe** - Leverages Nim's strong type system for reliability
 - 📦 **Minimal Dependencies** - Uses only essential, well-maintained packages
 - 🔧 **Easy Integration** - Works with any MCP-compatible LLM application
@@ -51,6 +52,9 @@ when isMainModule:
   
   # Or specify HTTP transport:
   # runServer(HttpTransport(8080, "127.0.0.1"))
+  
+  # Or specify WebSocket transport for real-time communication:
+  # runServer(WebSocketTransport(8080, "127.0.0.1"))
 ```
 
 That's it! Your MCP server is ready to run.
@@ -156,6 +160,8 @@ Check out the `examples/` directory for complete examples:
 - [`macro_calculator.nim`](examples/macro_calculator.nim) - Calculator using macro API with automatic introspection (stdio)
 - [`macro_mummy_calculator.nim`](examples/macro_mummy_calculator.nim) - Calculator using macro API over HTTP transport
 - [`mummy_calculator.nim`](examples/mummy_calculator.nim) - Calculator using manual API over HTTP transport
+- [`websocket_calculator.nim`](examples/websocket_calculator.nim) - Calculator using macro API over WebSocket transport (real-time)
+- [`authenticated_websocket_calculator.nim`](examples/authenticated_websocket_calculator.nim) - WebSocket calculator with Bearer token authentication
 
 See the [examples README](examples/README.md) for detailed explanations of the differences between examples.
 

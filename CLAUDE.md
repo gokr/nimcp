@@ -44,6 +44,8 @@ nimble build         # Build the package
 - `src/nimcp/protocol.nim` - JSON-RPC protocol implementation  
 - `src/nimcp/server.nim` - MCP server implementation
 - `src/nimcp/mcpmacros.nim` - High-level macro API for easy server creation
+- `src/nimcp/mummy_transport.nim` - HTTP transport implementation
+- `src/nimcp/websocket_transport.nim` - WebSocket transport implementation
 
 ### Two API Styles
 
@@ -71,12 +73,23 @@ await server.runStdio()  # Stdio transport
 - `McpToolResult`, `McpResourceContents` - Response types
 
 ### Protocol Flow
-MCP servers communicate via JSON-RPC 2.0 over stdio transport:
+MCP servers communicate via JSON-RPC 2.0 over multiple transport options:
 
 **Stdio Transport**:
 - Communication over stdin/stdout
 - Suitable for CLI integration and process spawning
 - Primary transport for MCP specification
+
+**HTTP Transport**:
+- JSON-RPC 2.0 over HTTP POST requests
+- RESTful interface with CORS support
+- Bearer token authentication support
+
+**WebSocket Transport**:
+- Real-time bidirectional communication
+- Persistent connections with lower latency
+- Ideal for interactive applications
+- Supports Bearer token authentication during handshake
 
 The server handles:
 - Tool calls with JSON schema validation
@@ -84,7 +97,9 @@ The server handles:
 - Prompt template rendering
 - Server capability negotiation
 
-**HTTP Example**: See `examples/simple_http_calculator.nim` for a demonstration of HTTP transport using Mummy web server with JSON-RPC 2.0 over HTTP.
+**Transport Examples**: 
+- HTTP: `examples/macro_mummy_calculator.nim` 
+- WebSocket: `examples/websocket_calculator.nim`
 
 ## Dependencies
 - nim >= 2.0.0
@@ -94,7 +109,9 @@ The server handles:
 - `examples/simple_server.nim` - Basic echo and time tools with info resource (stdio)
 - `examples/calculator_server.nim` - More complex calculator with multiple tools (manual API, stdio)
 - `examples/macro_calculator.nim` - Calculator using macro API with automatic introspection (stdio)
-- `examples/simple_http_calculator.nim` - HTTP-based calculator server with JSON-RPC over HTTP
+- `examples/macro_mummy_calculator.nim` - HTTP-based calculator using macro API
+- `examples/websocket_calculator.nim` - WebSocket calculator with real-time communication (macro API)
+- `examples/authenticated_websocket_calculator.nim` - WebSocket calculator with Bearer token authentication
 
 ## Macro API Features
 The macro API automatically extracts:
