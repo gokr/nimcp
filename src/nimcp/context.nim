@@ -1,7 +1,7 @@
 ## Request context implementation for NimCP
 ## Provides request context, progress tracking, cancellation, and structured error handling
 
-import json, tables, options, times, strutils, locks, asyncdispatch, random
+import json, tables, options, times, strutils, locks, random
 import types
 
 type

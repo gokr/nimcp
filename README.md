@@ -3,7 +3,7 @@
 ![Nim](https://img.shields.io/badge/nim-2.0+-blue.svg)
 ![License](https://img.shields.io/badge/license-MIT-green.svg)
 
-**NimCP** is a macro-based library for creating [Model Context Protocol (MCP)](https://modelcontextprotocol.io) servers in Nim. It leverages Nim's excellent macro system to provide an incredibly easy-to-use API for building MCP servers that integrate seamlessly with LLM applications.
+**NimCP** is a macro-based library for creating [Model Context Protocol (MCP)](https://modelcontextprotocol.io) servers in Nim. It leverages Nim's macro system to provide an incredibly easy-to-use API for building MCP servers that integrate seamlessly with LLM applications.
 
 **NOTE: 99.9% of this library was written using Claude Code "vibe coding"**
 
@@ -12,7 +12,6 @@
 - **Macro-driven API** - Define servers, tools, resources, and prompts with simple, declarative syntax
 - **Full MCP 2024-11-05 Support** - Complete implementation of MCP specification with JSON-RPC 2.0
 - **Multiple Transports** - Supports stdio, HTTP, and WebSocket transports with authentication
-- **Type Safe** - Leverages Nim's strong type system for reliability and performance
 - **Enhanced Type System** - Support for objects, unions, enums, optional types, and arrays
 - **Automatic Schema Generation** - JSON schemas generated from Nim type signatures
 - **Request Context System** - Progress tracking, cancellation, and request lifecycle management
@@ -20,11 +19,10 @@
 - **Resource URI Templates** - Dynamic URI patterns with parameter extraction (`/users/{id}`)
 - **Server Composition** - Mount multiple MCP servers with prefixes and routing for API gateways
 - **Pluggable Logging** - Flexible logging system with multiple handlers, levels, and structured output
-- **HTTP Streaming** - Server-Sent Events for real-time progress updates and live data streaming
+- **Real-time Communication** - WebSocket transport for bidirectional real-time updates and live data streaming
 - **Middleware Pipeline** - Request/response transformation and processing hooks
 - **Fluent UFCS API** - Method chaining patterns for elegant server configuration
-- **High Performance** - Efficient implementation with modern taskpools for concurrent processing
-- **Thread Safety** - Granular locking and thread-safe operations throughout
+- **High Performance** - Mummy based HTTP and WebSockets implementation and modern taskpools for stdio transport
 - **Comprehensive Testing** - Full test suite covering all features and edge cases
 - **Minimal Dependencies** - Uses only essential, well-maintained packages
 - **Easy Integration** - Works with any MCP-compatible LLM application
@@ -177,7 +175,6 @@ Check out the `examples/` directory for comprehensive examples:
 - [`resource_templates_example.nim`](examples/resource_templates_example.nim) - Dynamic URI patterns with parameter extraction
 - [`server_composition_example.nim`](examples/server_composition_example.nim) - Server mounting and API gateway patterns
 - [`logging_example.nim`](examples/logging_example.nim) - Pluggable logging system with multiple handlers
-- [`streaming_example.nim`](examples/streaming_example.nim) - HTTP streaming with Server-Sent Events
 - [`fluent_api_example.nim`](examples/fluent_api_example.nim) - Method chaining and fluent UFCS API
 - [`enhanced_calculator.nim`](examples/enhanced_calculator.nim) - Comprehensive example showcasing all features
 

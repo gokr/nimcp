@@ -97,12 +97,6 @@ This directory contains comprehensive examples demonstrating NimCP's full featur
   - Chronicles integration for structured logging
 - **Best for**: Production deployments requiring comprehensive logging
 
-### `streaming_example.nim` - HTTP Streaming with Server-Sent Events
-- **Features**:
-  - Real-time progress updates via Server-Sent Events
-  - HTTP streaming for long-running operations
-  - Live data streaming and progress tracking
-- **Best for**: Long-running operations with progress feedback
 
 ### `fluent_api_example.nim` - Fluent UFCS API
 - **Features**:
@@ -140,7 +134,7 @@ This directory contains comprehensive examples demonstrating NimCP's full featur
 ### HTTP Transport
 - **Use case**: Web services, REST API integration, testing with curl, microservices
 - **Features**: RESTful endpoints, standard HTTP methods, CORS support
-- **Examples**: `macro_mummy_calculator.nim`, `mummy_calculator.nim`, `authenticated_mummy_calculator.nim`, `streaming_example.nim`
+- **Examples**: `macro_mummy_calculator.nim`, `mummy_calculator.nim`, `authenticated_mummy_calculator.nim`
 
 ### WebSocket Transport
 - **Use case**: Real-time applications, bidirectional communication, live updates
@@ -161,7 +155,6 @@ nim c -r examples/macro_calculator.nim
 nim c -r examples/macro_mummy_calculator.nim
 nim c -r examples/mummy_calculator.nim
 nim c -r examples/authenticated_mummy_calculator.nim
-nim c -r examples/streaming_example.nim
 ```
 
 ### WebSocket Examples
@@ -280,7 +273,6 @@ server.logger.addHandler(newStructuredLogHandler())
 | `resource_templates_example.nim` | Macro | Stdio | None | Dynamic URI templates |
 | `server_composition_example.nim` | Mixed | Stdio | None | Server mounting |
 | `logging_example.nim` | Macro | Stdio | None | Pluggable logging |
-| `streaming_example.nim` | Macro | HTTP | None | Server-Sent Events |
 | `fluent_api_example.nim` | Fluent | Stdio | None | Method chaining |
 | `enhanced_calculator.nim` | Macro | HTTP | Optional | All advanced features |
 
@@ -300,6 +292,6 @@ server.logger.addHandler(newStructuredLogHandler())
 - Resource URI templates with parameters
 - Server composition and mounting
 - Pluggable logging system
-- HTTP streaming with Server-Sent Events
+- Real-time communication via WebSocket transport
 - Middleware pipeline support
 - Fluent UFCS API patterns

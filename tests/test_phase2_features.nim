@@ -1,7 +1,7 @@
 ## Comprehensive tests for Phase 2 features
 ## Tests resource templates, server composition, logging, and streaming
 
-import unittest, json, tables, options, asyncdispatch, strutils, times
+import unittest, json, tables, options, strutils, times
 import ../src/nimcp
 
 suite "Phase 2 Features Tests":
