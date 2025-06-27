@@ -1,10 +1,9 @@
-## Comprehensive tests for Phase 2 features
 ## Tests resource templates, server composition, logging, and streaming
 
 import unittest, json, tables, options, strutils, times
 import ../src/nimcp
 
-suite "Phase 2 Features Tests":
+suite "Extra Features Tests":
   
   test "Resource URI Templates - Basic functionality":
     # Test URI template compilation
@@ -424,4 +423,4 @@ suite "Phase 2 Features Tests":
     check mountPoint.isSome
     check mountPoint.get().path == "/logs"
 
-echo "✅ All Phase 2 feature tests completed!"
+echo "✅ All extra feature tests completed!"

@@ -24,4 +24,4 @@ task test, "Run all tests":
   exec "nim c -r tests/test_error_handling.nim"
   exec "nim c -r tests/test_protocol_compliance.nim"
   exec "nim c -r tests/test_edge_cases.nim"
-  exec "nim c -r tests/test_phase2_features.nim"
+  exec "nim c -r tests/test_extra_features.nim"
