@@ -169,5 +169,110 @@ proc processRequest(): McpToolResult =
 
 **Avoid**: The verbose pattern of `result = value; return` for early exits
 
+### Field Access Guidelines
+
+**Direct Field Access**: Prefer direct field access over trivial getter/setter procedures
+```nim
+# Preferred: Direct field access for simple get/set operations
+server.requestTimeout = 5000        # Direct assignment
+let timeout = server.requestTimeout # Direct access
+composed.mainServer                 # Direct access to public fields
+mountPoint.server                   # Direct access to public fields
+
+# Avoid: Trivial getter/setter procedures
+proc getRequestTimeout*(server: McpServer): int = server.requestTimeout
+proc setRequestTimeout*(server: McpServer, timeout: int) = server.requestTimeout = timeout
+```
+
+**When to Use Procedures**: Reserve procedures for complex operations with logic
+```nim
+# Appropriate: Complex logic, validation, or side effects
+proc setLogLevel*(server: McpServer, level: LogLevel) =
+  server.logger.setMinLevel(level)  # Calls method on nested object
+
+proc getServerStats*(server: McpServer): Table[string, JsonNode] =
+  # Complex computation combining multiple fields
+  result = initTable[string, JsonNode]()
+  result["serverName"] = %server.serverInfo.name
+  result["toolCount"] = %server.getRegisteredToolNames().len
+```
+
+**Public Field Declaration**: Use `*` to export fields that should be directly accessible
+```nim
+type
+  McpServer* = ref object
+    serverInfo*: McpServerInfo      # Public - direct access allowed
+    requestTimeout*: int            # Public - direct access allowed
+    initialized*: bool              # Public - direct access allowed
+    internalState: SomePrivateType  # Private - no direct access
+```
+
+### JSON Handling Style Guidelines
+
+**JSON Object Construction**: Prefer the `%*{}` syntax for clean, readable JSON creation
+```nim
+# Preferred: Clean and readable
+let response = %*{
+  "content": contentsToJsonArray(contents),
+  "isError": false
+}
+
+# Avoid: Manual construction when %*{} is sufficient
+let response = newJObject()
+response["content"] = contentsToJsonArray(contents)
+response["isError"] = %false
+```
+
+**Field Access**: Use consolidated utility functions for consistent error handling
+```nim
+# Preferred: Type-safe field access with clear error messages
+let toolName = requireStringField(params, "name")
+let optionalArg = getStringField(params, "argument", "default")
+
+# Avoid: Direct access without proper error handling
+let toolName = params["name"].getStr()  # Can throw exceptions
+```
+
+**Content Serialization**: Use centralized utilities for consistent formatting
+```nim
+# Preferred: Consolidated utilities
+let jsonContent = contentToJsonNode(content)
+let jsonArray = contentsToJsonArray(contents)
+
+# Avoid: Manual serialization patterns
+let jsonContent = %*{
+  "type": content.`type`,
+  "text": content.text  # Missing proper variant handling
+}
+```
+
+**Error Response Creation**: Use standardized error utilities across all transport layers
+```nim
+# Preferred: Consistent error responses
+let errorResponse = createParseError(details = e.msg)
+let invalidResponse = createInvalidRequest(id, "Missing required field")
+
+# Avoid: Manual error construction
+let errorResponse = JsonRpcResponse(
+  jsonrpc: "2.0",
+  id: id,
+  error: some(JsonRpcError(code: -32700, message: "Parse error"))
+)
+```
+
+**Field Validation**: Combine validation with field access for cleaner code
+```nim
+# Preferred: Validation integrated with access
+proc handleToolCall(params: JsonNode): JsonNode =
+  let toolName = requireStringField(params, "name")  # Validates and extracts
+  let arguments = params.getOrDefault("arguments", newJObject())
+
+# Avoid: Separate validation and access steps
+proc handleToolCall(params: JsonNode): JsonNode =
+  if not params.hasKey("name"):
+    raise newException(ValueError, "Missing name field")
+  let toolName = params["name"].getStr()
+```
+
 ## Development Best Practices
 - Always end todolists by running all the tests at the end to verify everything compiles and works
