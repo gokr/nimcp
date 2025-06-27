@@ -220,45 +220,22 @@ proc registerResourceTemplateWithContext*(server: McpServer, resourceTemplate: M
 # UFCS Fluent API Extensions
 # These functions enable method call syntax for more fluent server configuration
 
-proc withTool*(server: McpServer, tool: McpTool, handler: McpToolHandler): McpServer =
-  ## Fluent API: Register a tool and return the server for chaining
-  server.registerTool(tool, handler)
-  server
+# Generic fluent API template to reduce duplication
+template createFluentApi(name: untyped, itemType: typedesc, handlerType: typedesc, registerProc: untyped): untyped =
+  proc name*(server: McpServer, item: itemType, handler: handlerType): McpServer =
+    ## Fluent API: Register and return the server for chaining
+    registerProc(server, item, handler)
+    server
 
-proc withToolContext*(server: McpServer, tool: McpTool, handler: McpToolHandlerWithContext): McpServer =
-  ## Fluent API: Register a context-aware tool and return the server for chaining
-  server.registerToolWithContext(tool, handler)
-  server
-
-proc withResource*(server: McpServer, resource: McpResource, handler: McpResourceHandler): McpServer =
-  ## Fluent API: Register a resource and return the server for chaining
-  server.registerResource(resource, handler)
-  server
-
-proc withResourceContext*(server: McpServer, resource: McpResource, handler: McpResourceHandlerWithContext): McpServer =
-  ## Fluent API: Register a context-aware resource and return the server for chaining
-  server.registerResourceWithContext(resource, handler)
-  server
-
-proc withPrompt*(server: McpServer, prompt: McpPrompt, handler: McpPromptHandler): McpServer =
-  ## Fluent API: Register a prompt and return the server for chaining
-  server.registerPrompt(prompt, handler)
-  server
-
-proc withPromptContext*(server: McpServer, prompt: McpPrompt, handler: McpPromptHandlerWithContext): McpServer =
-  ## Fluent API: Register a context-aware prompt and return the server for chaining
-  server.registerPromptWithContext(prompt, handler)
-  server
-
-proc withResourceTemplate*(server: McpServer, resourceTemplate: McpResourceTemplate, handler: ResourceTemplateHandler): McpServer =
-  ## Fluent API: Register a resource template and return the server for chaining
-  server.registerResourceTemplate(resourceTemplate, handler)
-  server
-
-proc withResourceTemplateContext*(server: McpServer, resourceTemplate: McpResourceTemplate, handler: ResourceTemplateHandlerWithContext): McpServer =
-  ## Fluent API: Register a context-aware resource template and return the server for chaining
-  server.registerResourceTemplateWithContext(resourceTemplate, handler)
-  server
+# Generate fluent API functions using the template
+createFluentApi(withTool, McpTool, McpToolHandler, registerTool)
+createFluentApi(withToolContext, McpTool, McpToolHandlerWithContext, registerToolWithContext)
+createFluentApi(withResource, McpResource, McpResourceHandler, registerResource)
+createFluentApi(withResourceContext, McpResource, McpResourceHandlerWithContext, registerResourceWithContext)
+createFluentApi(withPrompt, McpPrompt, McpPromptHandler, registerPrompt)
+createFluentApi(withPromptContext, McpPrompt, McpPromptHandlerWithContext, registerPromptWithContext)
+createFluentApi(withResourceTemplate, McpResourceTemplate, ResourceTemplateHandler, registerResourceTemplate)
+createFluentApi(withResourceTemplateContext, McpResourceTemplate, ResourceTemplateHandlerWithContext, registerResourceTemplateWithContext)
 
 # Alternative UFCS style: object.registerWith(server, handler)
 
