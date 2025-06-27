@@ -1,40 +1,36 @@
 # The NimCP Tutorial: From Zero to MCP Hero 🚀
 
-*Or: How I Learned to Stop Worrying and Love the Model Context Protocol*
-
-Welcome, brave developer! You're about to embark on a journey through the mystical realm of Model Context Protocol (MCP) servers using NimCP. Think of this as your field guide to building AI-friendly APIs that don't make you want to throw your keyboard out the window.
+Welcome, developer! You're about to learn how to build Model Context Protocol (MCP) servers using NimCP. This tutorial will guide you through creating AI-friendly APIs efficiently.
 
 ## Table of Contents
 
-1. [Prerequisites: The "You Must Be This Tall to Ride" Section](#prerequisites)
-2. [Chapter 1: Hello, MCP World! (The Obligatory Echo Server)](#chapter-1-hello-mcp-world)
-3. [Chapter 2: Adding Some Personality (Resources and Multiple Tools)](#chapter-2-adding-some-personality)
-4. [Chapter 3: The Macro Magic Show (Automatic Schema Generation)](#chapter-3-the-macro-magic-show)
-5. [Chapter 4: Prompt Engineering for Fun and Profit](#chapter-4-prompt-engineering)
-6. [Chapter 5: Breaking Free from Stdio Prison (HTTP Transport)](#chapter-5-breaking-free-from-stdio-prison)
-7. [Chapter 6: WebSocket Wizardry (Real-time Communication)](#chapter-6-websocket-wizardry)
-8. [Chapter 7: Fort Knox Mode (Authentication & Security)](#chapter-7-fort-knox-mode)
-9. [Chapter 8: The Advanced Stuff (Middleware, Context, and Concurrency)](#chapter-8-the-advanced-stuff)
-10. [Troubleshooting: When Things Go Sideways](#troubleshooting)
+1. [Prerequisites](#prerequisites)
+2. [Chapter 1: Hello, MCP World!](#chapter-1-hello-mcp-world)
+3. [Chapter 2: The Macro Magic (Automatic Schema Generation)](#chapter-2-the-macro-magic)
+4. [Chapter 3: Adding Personality (Resources and Multiple Tools)](#chapter-3-adding-personality)
+5. [Chapter 4: Prompt Engineering](#chapter-4-prompt-engineering)
+6. [Chapter 5: HTTP Transport](#chapter-5-http-transport)
+7. [Chapter 6: WebSocket Communication](#chapter-6-websocket-communication)
+8. [Chapter 7: Authentication & Security](#chapter-7-authentication--security)
+9. [Chapter 8: Advanced Features](#chapter-8-advanced-features)
+10. [Troubleshooting](#troubleshooting)
 
 ---
 
 ## Prerequisites
 
-Before we dive into the deep end, make sure you have:
+Before we start, make sure you have:
 
-- **Nim 2.2.4+** (because we're not savages using ancient compilers)
-- **Basic Nim knowledge** (you know what `proc` means and don't panic at the sight of `{.async.}`)
-- **A sense of humor** (optional but highly recommended for surviving this tutorial)
-- **Coffee/Tea/Energy Drink** (mandatory for any serious programming session)
+- **Nim 2.2.4+**
+- **Basic Nim knowledge** (you know what `proc` means and understand `{.async.}`)
+- **Development environment** set up for Nim
 
 ### Installation
 
 ```bash
-# The moment of truth
 nimble install nimcp
 
-# Or if you're feeling adventurous and want the bleeding edge:
+# Or from source:
 git clone https://github.com/gokr/nimcp.git
 cd nimcp
 nimble install
@@ -59,11 +55,9 @@ graph LR
 
 ## Chapter 1: Hello, MCP World!
 
-*"In the beginning was the Echo, and the Echo was with the Server, and the Echo was good."*
+Let's start with a simple echo server to verify your setup works.
 
-Let's start with the programming equivalent of "Hello, World!" - an echo server that proves your setup works and doesn't immediately crash and burn.
-
-### The Simplest Possible MCP Server
+### The Manual Way (For Understanding)
 
 Create a file called `my_first_server.nim`:
 
@@ -71,36 +65,36 @@ Create a file called `my_first_server.nim`:
 import nimcp
 import json
 
-# The manual way - like assembling IKEA furniture with the instructions
+# The manual approach - explicit schema definition
 let server = newMcpServer("my-first-server", "1.0.0")
 
-# Define our echo tool (because parrots are the best programmers)
+# Define our echo tool
 let echoTool = McpTool(
   name: "echo",
-  description: some("Echoes back whatever you throw at it, like a very polite parrot"),
+  description: some("Echoes back whatever you send it"),
   inputSchema: %*{
     "type": "object",
     "properties": {
       "text": {
-        "type": "string", 
-        "description": "The text to echo back (we promise not to judge)"
+        "type": "string",
+        "description": "The text to echo back"
       }
     },
     "required": ["text"]
   }
 )
 
-# The handler - where the magic happens (spoiler: it's not very magical)
+# The handler function
 proc echoHandler(args: JsonNode): McpToolResult =
   let text = args["text"].getStr()
   return McpToolResult(content: @[createTextContent("Echo: " & text)])
 
-# Register our tool (like signing up for a gym membership, but actually useful)
+# Register our tool
 server.registerTool(echoTool, echoHandler)
 
-# Run the server (the moment of truth)
+# Run the server
 when isMainModule:
-  echo "🚀 Starting the world's most sophisticated echo chamber..."
+  echo "🚀 Starting echo server..."
   server.runStdio()
 ```
 
@@ -119,7 +113,7 @@ You should see something like:
 {"jsonrpc":"2.0","id":"1","result":{"tools":[{"name":"echo","description":"Echoes back whatever you throw at it, like a very polite parrot"}]}}
 ```
 
-🎉 **Congratulations!** You've just created your first MCP server. It's not going to win any awards, but it works, and that's what matters.
+🎉 **Congratulations!** You've created your first MCP server.
 
 ### Understanding the Architecture
 
@@ -128,299 +122,251 @@ sequenceDiagram
     participant Client as LLM Client
     participant Server as MCP Server
     participant Handler as Echo Handler
-    
+
     Client->>Server: tools/list
     Server->>Client: [echo tool info]
-    
+
     Client->>Server: tools/call "echo" {"text": "Hello"}
     Server->>Handler: process("Hello")
     Handler->>Server: "Echo: Hello"
     Server->>Client: {"content": [{"type": "text", "text": "Echo: Hello"}]}
 ```
 
-### Try This! 🧪
-
-1. **Modify the echo**: Make it SHOUT EVERYTHING BACK IN CAPS
-2. **Add validation**: Reject empty strings with a snarky message
-3. **Count characters**: Return both the echo and character count
+As you can see, writing schemas manually is verbose. Let's learn a better way!
 
 ---
 
-## Chapter 2: Adding Some Personality
+## Chapter 2: The Macro Magic
 
-*"One tool is a hobby, two tools is a collection, three tools is an addiction."*
+Writing JSON schemas by hand is tedious and error-prone. NimCP's macro system automatically generates schemas from your procedure signatures, making development much faster and more maintainable.
 
-Let's expand our server with multiple tools and a resource. Think of this as upgrading from a Swiss Army knife with just a blade to one with all the gadgets you'll never use but feel good having.
+### The Better Way
+
+Create `macro_server.nim`:
+
+```nim
+import nimcp
+import math, strformat
+
+# The macro way - schemas write themselves!
+mcpServer("macro-server", "1.0.0"):
+
+  # Simple addition - no manual schema needed
+  mcpTool:
+    proc add(a: float, b: float): string =
+      ## Add two numbers together
+      ## - a: First number
+      ## - b: Second number
+      return fmt"The sum of {a} and {b} is {a + b}"
+
+  # String manipulation with optional parameters
+  mcpTool:
+    proc formatText(text: string, uppercase: bool = false, repeat: int = 1): string =
+      ## Format text with various options
+      ## - text: The text to format
+      ## - uppercase: Whether to convert to uppercase
+      ## - repeat: How many times to repeat it
+      var result = text
+      if uppercase:
+        result = result.toUpperAscii()
+
+      var finalResult = ""
+      for i in 1..repeat:
+        finalResult.add(result)
+        if i < repeat:
+          finalResult.add(" ")
+
+      return finalResult
+
+  # Mathematical calculations
+  mcpTool:
+    proc calculateCircle(radius: float): string =
+      ## Calculate circle properties
+      ## - radius: The radius of the circle (must be positive)
+      if radius <= 0:
+        return "Error: Radius must be positive"
+
+      let area = PI * radius * radius
+      let circumference = 2 * PI * radius
+
+      return fmt"Circle with radius {radius}: Area = {area:.2f}, Circumference = {circumference:.2f}"
+
+  # Array/sequence handling
+  mcpTool:
+    proc findMax(numbers: seq[float]): string =
+      ## Find the maximum number in a list
+      ## - numbers: List of numbers to search through
+      if numbers.len == 0:
+        return "Error: Can't find max of empty list"
+
+      let maxNum = max(numbers)
+      let maxIndex = numbers.find(maxNum)
+
+      return fmt"Maximum value is {maxNum} at position {maxIndex}"
+
+when isMainModule:
+  echo "🎩 Starting the Macro Server..."
+  echo "Schemas write themselves!"
+  runServer()  # Uses stdio by default
+```
+
+### The Magic Revealed
+
+What just happened? The `mcpTool` macro automatically:
+
+1. **Generated the tool name** from the procedure name
+2. **Created JSON schema** from parameter types (`float`, `string`, `bool`, `seq[float]`)
+3. **Extracted descriptions** from your doc comments
+4. **Handled parameter documentation** from the `## - param: description` format
+5. **Created type-safe wrappers** that convert JSON to Nim types
+
+```mermaid
+graph TD
+    A[Your Nim Proc] --> B[mcpTool Macro]
+    B --> C[JSON Schema Generation]
+    B --> D[Type Conversion Wrapper]
+    B --> E[Error Handling]
+    C --> F[MCP Tool Registration]
+    D --> F
+    E --> F
+```
+
+### Testing the Magic
+
+```bash
+nim c -r macro_server.nim
+
+# Test the addition
+echo '{"jsonrpc":"2.0","id":"1","method":"tools/call","params":{"name":"add","arguments":{"a":3.14,"b":2.86}}}' | ./macro_server
+
+# Test text formatting
+echo '{"jsonrpc":"2.0","id":"2","method":"tools/call","params":{"name":"formatText","arguments":{"text":"hello world","uppercase":true,"repeat":3}}}' | ./macro_server
+```
+
+From now on, we'll use the macro syntax for all examples - it's much cleaner!
+
+---
+
+## Chapter 3: Adding Personality
+
+Now let's expand our server with multiple tools and resources using the clean macro syntax.
 
 Create `personality_server.nim`:
 
 ```nim
 import nimcp
-import json, times, strutils, random
+import times, strutils, random
 
-let server = newMcpServer("personality-server", "1.0.0")
+mcpServer("personality-server", "1.0.0"):
 
-# Tool 1: The Improved Echo (now with 50% more personality!)
-let echoTool = McpTool(
-  name: "echo",
-  description: some("Echoes text with optional attitude adjustment"),
-  inputSchema: %*{
-    "type": "object",
-    "properties": {
-      "text": {"type": "string", "description": "Text to echo"},
-      "attitude": {
-        "type": "string", 
-        "enum": ["normal", "excited", "sarcastic", "confused"],
-        "description": "How to deliver the echo"
+  # Echo with attitude
+  mcpTool:
+    proc echo(text: string, attitude: string = "normal"): string =
+      ## Echo text with optional attitude adjustment
+      ## - text: Text to echo
+      ## - attitude: How to deliver the echo (normal, excited, sarcastic)
+      let response = case attitude:
+        of "excited": "OMG! " & text.toUpperAscii() & "!!!"
+        of "sarcastic": "Oh wow, \"" & text & "\". How original."
+        else: "Echo: " & text
+      return response
+
+  # Current time with formatting options
+  mcpTool:
+    proc currentTime(format: string = "human"): string =
+      ## Get current time in various formats
+      ## - format: Time format (iso, human, unix)
+      let now = now()
+      let timeStr = case format:
+        of "iso": $now
+        of "unix": $now.toTime().toUnix()
+        else: now.format("yyyy-MM-dd HH:mm:ss")
+      return "Current time: " & timeStr
+
+  # Random wisdom generator
+  mcpTool:
+    proc randomWisdom(): string =
+      ## Get random programming wisdom
+      let wisdoms = [
+        "The best code is no code at all.",
+        "There are only two hard things in Computer Science: cache invalidation and naming things.",
+        "Programming is like writing a book... except if you miss a comma, nothing makes sense."
+      ]
+      randomize()
+      let wisdom = wisdoms[rand(wisdoms.len - 1)]
+      return "💡 " & wisdom
+
+  # Resource for server statistics
+  mcpResource("stats://server", "Server Statistics", "Server metrics and information"):
+    proc getStats(uri: string): string =
+      let stats = %*{
+        "server_name": "personality-server",
+        "version": "1.0.0",
+        "tools_registered": 3,
+        "uptime": "a few seconds"
       }
-    },
-    "required": ["text"]
-  }
-)
-
-proc echoHandler(args: JsonNode): McpToolResult =
-  let text = args["text"].getStr()
-  let attitude = args.getOrDefault("attitude", %"normal").getStr()
-  
-  let response = case attitude:
-    of "excited": "OMG! " & text.toUpperAscii() & "!!!"
-    of "sarcastic": "Oh wow, \"" & text & "\". How original."
-    of "confused": "Um... " & text & "? I think?"
-    else: "Echo: " & text
-  
-  return McpToolResult(content: @[createTextContent(response)])
-
-server.registerTool(echoTool, echoHandler)
-
-# Tool 2: Current Time (because someone always asks "what time is it?")
-let timeTool = McpTool(
-  name: "current_time",
-  description: some("Tells you what time it is (shocking, I know)"),
-  inputSchema: %*{
-    "type": "object",
-    "properties": {
-      "format": {
-        "type": "string",
-        "enum": ["iso", "human", "unix"],
-        "description": "Time format preference"
-      }
-    }
-  }
-)
-
-proc timeHandler(args: JsonNode): McpToolResult =
-  let format = args.getOrDefault("format", %"human").getStr()
-  let now = now()
-  
-  let timeStr = case format:
-    of "iso": $now
-    of "unix": $now.toTime().toUnix()
-    else: now.format("yyyy-MM-dd HH:mm:ss")
-  
-  return McpToolResult(content: @[createTextContent("Current time: " & timeStr)])
-
-server.registerTool(timeTool, timeHandler)
-
-# Tool 3: Random Wisdom Generator (because why not?)
-let wisdomTool = McpTool(
-  name: "random_wisdom",
-  description: some("Dispenses questionable wisdom from the depths of the internet"),
-  inputSchema: %*{"type": "object", "properties": {}}
-)
-
-proc wisdomHandler(args: JsonNode): McpToolResult =
-  let wisdoms = [
-    "The best code is no code at all.",
-    "There are only two hard things in Computer Science: cache invalidation and naming things.",
-    "It works on my machine ¯\\_(ツ)_/¯",
-    "99 little bugs in the code, 99 little bugs. Take one down, patch it around, 117 little bugs in the code.",
-    "Programming is like writing a book... except if you miss out a single comma on page 126, the whole thing makes no sense."
-  ]
-  
-  randomize()
-  let wisdom = wisdoms[rand(wisdoms.len - 1)]
-  return McpToolResult(content: @[createTextContent("💡 " & wisdom)])
-
-server.registerTool(wisdomTool, wisdomHandler)
-
-# Resource: Server Stats (because everyone loves metrics)
-let statsResource = McpResource(
-  uri: "stats://server",
-  name: "Server Statistics",
-  description: some("Riveting statistics about this server")
-)
-
-proc statsHandler(uri: string): McpResourceContents =
-  let stats = %*{
-    "server_name": "personality-server",
-    "version": "1.0.0",
-    "uptime_seconds": 42,  # TODO: implement actual uptime tracking
-    "tools_registered": 3,
-    "coffee_consumed": "insufficient",
-    "bugs_fixed": "more than created (hopefully)",
-    "developer_sanity": "questionable"
-  }
-  
-  return McpResourceContents(
-    uri: uri,
-    content: @[createTextContent($stats)]
-  )
-
-server.registerResource(statsResource, statsHandler)
+      return $stats
 
 when isMainModule:
   echo "🎭 Starting the Personality Server..."
-  echo "Now with 100% more attitude and 73% more random numbers!"
-  server.runStdio()
+  runServer()
 ```
-
-### Testing the Personality
-
-```bash
-nim c -r personality_server.nim
-
-# Test the sarcastic echo
-echo '{"jsonrpc":"2.0","id":"1","method":"tools/call","params":{"name":"echo","arguments":{"text":"Hello world","attitude":"sarcastic"}}}' | ./personality_server
-
-# Get some wisdom
-echo '{"jsonrpc":"2.0","id":"2","method":"tools/call","params":{"name":"random_wisdom","arguments":{}}}' | ./personality_server
-
-# Check server stats
-echo '{"jsonrpc":"2.0","id":"3","method":"resources/read","params":{"uri":"stats://server"}}' | ./personality_server
-```
-
-### Try This! 🧪
-
-1. **Add a joke tool**: Return random programming jokes
-2. **Create a calculator**: Basic math operations with witty error messages
-3. **Build a compliment generator**: Because everyone needs encouragement
 
 ---
 
-## Chapter 4: Prompt Engineering for Fun and Profit
+## Chapter 4: Prompt Engineering
 
-*"Give a developer a prompt, and they'll build for a day. Teach a developer to prompt, and they'll automate everything."*
+Prompts in MCP are reusable conversation starters that help LLMs understand what you want them to do.
 
-Prompts in MCP are like templates for AI interactions - they're reusable conversation starters that help LLMs understand what you want them to do. Think of them as the "mad libs" of the AI world.
-
-Create `prompt_master.nim`:
+Create `prompt_server.nim`:
 
 ```nim
 import nimcp
 import json, tables, strformat
 
-mcpServer("prompt-master", "1.0.0"):
+mcpServer("prompt-server", "1.0.0"):
 
-  # Simple prompt without arguments
+  # Simple greeting prompt
   mcpPrompt("greeting", "A friendly greeting prompt", @[]):
     proc generateGreeting(name: string, args: Table[string, JsonNode]): seq[McpPromptMessage] =
       let systemMsg = McpPromptMessage(
         role: System,
-        content: createTextContent("You are a friendly assistant who greets users warmly.")
+        content: createTextContent("You are a friendly assistant.")
       )
-
       let userMsg = McpPromptMessage(
         role: User,
-        content: createTextContent("Please greet the user in a friendly manner.")
+        content: createTextContent("Please greet the user.")
       )
-
       return @[systemMsg, userMsg]
 
-  # Prompt with arguments for customization
-  mcpPrompt("code_reviewer", "Code review prompt with customizable focus", @[
-    McpPromptArgument(name: "language", description: some("Programming language"), required: some(true)),
-    McpPromptArgument(name: "focus", description: some("Review focus area"), required: some(false)),
-    McpPromptArgument(name: "strictness", description: some("Review strictness level"), required: some(false))
+  # Code review prompt with parameters
+  mcpPrompt("code_reviewer", "Code review prompt", @[
+    McpPromptArgument(name: "language", description: some("Programming language"), required: some(true))
   ]):
     proc generateCodeReview(name: string, args: Table[string, JsonNode]): seq[McpPromptMessage] =
       let language = args.getOrDefault("language", %"Python").getStr()
-      let focus = args.getOrDefault("focus", %"general").getStr()
-      let strictness = args.getOrDefault("strictness", %"moderate").getStr()
-
-      let systemPrompt = fmt"""You are an expert {language} code reviewer.
-Focus on: {focus}
-Review strictness: {strictness}
-
-Provide constructive feedback that helps developers improve their code quality."""
+      let systemPrompt = fmt"You are an expert {language} code reviewer."
 
       let systemMsg = McpPromptMessage(
         role: System,
         content: createTextContent(systemPrompt)
       )
-
       let userMsg = McpPromptMessage(
         role: User,
-        content: createTextContent("Please review the following code and provide feedback.")
+        content: createTextContent("Please review the following code.")
       )
-
-      return @[systemMsg, userMsg]
-
-  # Advanced prompt with context awareness
-  mcpPromptWithContext("debug_helper", "Debugging assistant with context", @[
-    McpPromptArgument(name: "error_type", description: some("Type of error encountered"), required: some(true)),
-    McpPromptArgument(name: "urgency", description: some("How urgent is this bug?"), required: some(false))
-  ]):
-    proc generateDebugPrompt(ctx: McpRequestContext, name: string, args: Table[string, JsonNode]): seq[McpPromptMessage] =
-      let errorType = args.getOrDefault("error_type", %"runtime").getStr()
-      let urgency = args.getOrDefault("urgency", %"medium").getStr()
-
-      ctx.logMessage("info", fmt"Generating debug prompt for {errorType} error with {urgency} urgency")
-
-      let systemPrompt = fmt"""You are a debugging expert specializing in {errorType} errors.
-Urgency level: {urgency}
-
-Help the developer identify the root cause and provide step-by-step solutions."""
-
-      let systemMsg = McpPromptMessage(
-        role: System,
-        content: createTextContent(systemPrompt)
-      )
-
-      let userMsg = McpPromptMessage(
-        role: User,
-        content: createTextContent("I'm encountering an issue. Please help me debug it systematically.")
-      )
-
       return @[systemMsg, userMsg]
 
 when isMainModule:
-  echo "🎯 Starting the Prompt Master Server..."
-  echo "Crafting conversation starters since 2024!"
+  echo "🎯 Starting Prompt Server..."
   runServer()
 ```
 
-### Understanding Prompt Flow
-
-```mermaid
-sequenceDiagram
-    participant Client as LLM Client
-    participant Server as MCP Server
-    participant Prompt as Prompt Handler
-
-    Client->>Server: prompts/list
-    Server->>Client: [available prompts]
-
-    Client->>Server: prompts/get "code_reviewer" {language: "Nim"}
-    Server->>Prompt: generate(args)
-    Prompt->>Server: [system_msg, user_msg]
-    Server->>Client: prompt messages
-
-    Note over Client: Uses messages to start conversation
-```
-
-### Try This! 🧪
-
-1. **Create a documentation prompt**: Help generate API documentation
-2. **Build a testing prompt**: Generate test cases for code
-3. **Make a refactoring prompt**: Suggest code improvements
-
 ---
 
-## Chapter 5: Breaking Free from Stdio Prison
+## Chapter 5: HTTP Transport
 
-*"Stdio is like training wheels - great for learning, but eventually you want to ride without them."*
-
-Time to graduate from the command-line world to the web! HTTP transport lets your MCP server play nice with web applications, REST clients, and anything that speaks HTTP.
+HTTP transport lets your MCP server work with web applications and REST clients.
 
 Create `web_server.nim`:
 
@@ -432,7 +378,7 @@ mcpServer("web-calculator", "1.0.0"):
 
   mcpTool:
     proc add(a: float, b: float): string =
-      ## Add two numbers via HTTP (because the web makes everything better)
+      ## Add two numbers via HTTP
       return fmt"Web result: {a} + {b} = {a + b}"
 
   mcpTool:
@@ -441,49 +387,23 @@ mcpServer("web-calculator", "1.0.0"):
       let result = pow(base, exponent)
       return fmt"Power calculation: {base}^{exponent} = {result}"
 
-  mcpTool:
-    proc fibonacci(n: int): string =
-      ## Calculate the nth Fibonacci number
-      if n < 0:
-        return "Error: Fibonacci is not defined for negative numbers"
-      elif n <= 1:
-        return fmt"Fibonacci({n}) = {n}"
-
-      var a, b = 0
-      b = 1
-      for i in 2..n:
-        let temp = a + b
-        a = b
-        b = temp
-
-      return fmt"Fibonacci({n}) = {b}"
-
   # Resource for mathematical constants
   mcpResource("math://constants", "Mathematical Constants", "Important mathematical constants"):
     proc getConstants(uri: string): string =
       let constants = %*{
         "pi": PI,
         "e": E,
-        "golden_ratio": (1.0 + sqrt(5.0)) / 2.0,
-        "sqrt_2": sqrt(2.0)
+        "golden_ratio": (1.0 + sqrt(5.0)) / 2.0
       }
       return $constants
 
 when isMainModule:
   echo "🌐 Starting Web Calculator Server..."
-  echo "Now serving math over HTTP!"
-  echo ""
   echo "Endpoints:"
   echo "- GET  http://127.0.0.1:8080/         # Server info"
   echo "- POST http://127.0.0.1:8080/mcp      # MCP JSON-RPC"
-  echo ""
-  echo "Test with curl:"
-  echo """curl -X POST http://127.0.0.1:8080/mcp \
-  -H "Content-Type: application/json" \
-  -d '{"jsonrpc":"2.0","id":"1","method":"tools/list","params":{}}'"""
-  echo ""
 
-  # The magic line that switches from stdio to HTTP
+  # Switch from stdio to HTTP
   runServer(HttpTransport(8080, "127.0.0.1"))
 ```
 
@@ -507,93 +427,56 @@ curl -X POST http://127.0.0.1:8080/mcp \
   -d '{"jsonrpc":"2.0","id":"2","method":"tools/call","params":{"name":"add","arguments":{"a":42,"b":13}}}'
 ```
 
-### HTTP vs Stdio: The Showdown
+### HTTP vs Stdio
 
 | Feature | Stdio | HTTP |
 |---------|-------|------|
 | **Complexity** | Simple | Moderate |
-| **Web Integration** | Nope | Yes! |
+| **Web Integration** | No | Yes |
 | **Debugging** | Terminal logs | Browser dev tools |
 | **Scalability** | One client | Many clients |
-| **Cool Factor** | Meh | 😎 |
-
-### Try This! 🧪
-
-1. **Add CORS headers**: Make it work with web frontends
-2. **Create a health check endpoint**: Monitor server status
-3. **Add request logging**: See what's hitting your server
 
 ---
 
-## Chapter 6: WebSocket Wizardry
+## Chapter 6: WebSocket Communication
 
-*"WebSockets: Because sometimes you need to talk to your server in real-time, like a very technical phone call."*
+WebSockets enable bidirectional, real-time communication. Perfect for applications that need instant updates or live data feeds.
 
-WebSockets are like having a persistent phone line to your server - no more hanging up and calling back for every request. Perfect for real-time applications, live updates, and impressing your friends with "real-time bidirectional communication."
-
-Create `realtime_server.nim`:
+Create `websocket_server.nim`:
 
 ```nim
 import nimcp
 import math, times, strformat
 
-mcpServer("realtime-calculator", "1.0.0"):
+mcpServer("websocket-server", "1.0.0"):
 
   mcpTool:
     proc liveAdd(a: float, b: float): string =
-      ## Real-time addition (it's still just addition, but FASTER!)
+      ## Real-time addition
       let timestamp = now().format("HH:mm:ss")
       return fmt"[{timestamp}] Live result: {a} + {b} = {a + b}"
 
   mcpTool:
-    proc streamingFactorial(n: int): string =
-      ## Calculate factorial with "streaming" updates
-      if n < 0:
-        return "Error: Factorial not defined for negative numbers"
-      elif n > 20:
-        return "Error: That's too big! My calculator might explode."
-
-      var result = 1
-      var steps = ""
-
-      for i in 1..n:
-        result *= i
-        steps.add(fmt"{i}! = {result}\n")
-
-      return fmt"Factorial calculation steps:\n{steps}Final: {n}! = {result}"
-
-  mcpTool:
     proc serverTime(): string =
-      ## Get current server time (because time waits for no one)
+      ## Get current server time
       let now = now()
-      return fmt"Server time: {now.format('yyyy-MM-dd HH:mm:ss')} (timezone: probably wrong)"
+      return fmt"Server time: {now.format('yyyy-MM-dd HH:mm:ss')}"
 
   # Resource that changes over time
   mcpResource("live://stats", "Live Server Stats", "Real-time server statistics"):
     proc getLiveStats(uri: string): string =
       let stats = %*{
         "current_time": $now(),
-        "uptime": "probably a few seconds",
-        "active_connections": "at least one (you!)",
-        "coffee_level": "dangerously low",
-        "websocket_magic": "fully operational"
+        "active_connections": 1,
+        "websocket_magic": "operational"
       }
       return $stats
 
 when isMainModule:
-  echo "⚡ Starting Real-time Calculator Server..."
-  echo "Now with 100% more WebSocket magic!"
-  echo ""
+  echo "⚡ Starting WebSocket Server..."
   echo "WebSocket endpoint: ws://127.0.0.1:8080/"
-  echo "HTTP fallback: http://127.0.0.1:8080/"
   echo ""
-  echo "Features:"
-  echo "- Persistent connections (no more dial-up vibes)"
-  echo "- Real-time communication (as real as it gets)"
-  echo "- Lower latency (zoom zoom)"
-  echo "- Bidirectional messaging (we can talk back!)"
-  echo ""
-  echo "Test with a WebSocket client or browser console:"
+  echo "Test with browser console:"
   echo """
 const ws = new WebSocket('ws://127.0.0.1:8080/');
 ws.onopen = () => {
@@ -604,7 +487,7 @@ ws.onmessage = (event) => {
 };
 """
 
-  # WebSocket transport for real-time communication
+  # WebSocket transport
   runServer(WebSocketTransport(8080, "127.0.0.1"))
 ```
 
@@ -676,19 +559,11 @@ function callTool(name, args) {
 callTool("liveAdd", {"a": 42, "b": 13});
 ```
 
-### Try This! 🧪
-
-1. **Add a chat tool**: Let users send messages that get broadcast
-2. **Create a live counter**: Increment/decrement a shared counter
-3. **Build a notification system**: Send alerts to connected clients
-
 ---
 
-## Chapter 7: Fort Knox Mode
+## Chapter 7: Authentication & Security
 
-*"Security is like wearing pants - you might not always want to, but it's generally a good idea in public."*
-
-Time to add some security to your server! Because letting random people on the internet run arbitrary code on your server is like leaving your front door open with a sign that says "Free Stuff Inside."
+Time to add security to your server. Authentication ensures only authorized clients can access your tools.
 
 Create `secure_server.nim`:
 
@@ -696,32 +571,32 @@ Create `secure_server.nim`:
 import nimcp
 import math, strformat, base64, strutils
 
-mcpServer("secure-calculator", "1.0.0"):
+mcpServer("secure-server", "1.0.0"):
 
   mcpTool:
     proc secureAdd(a: float, b: float): string =
-      ## Secure addition (now with 256-bit encryption! Just kidding, it's still just addition)
+      ## Secure addition with authentication
       return fmt"🔒 Secure result: {a} + {b} = {a + b}"
 
   mcpTool:
     proc adminOnly(secret: string): string =
-      ## Admin-only function (super secret, don't tell anyone)
-      if secret != "please":
-        return "❌ Access denied! (Hint: try saying the magic word)"
-      return "🎉 Welcome, admin! You've unlocked the secret of... absolutely nothing special."
+      ## Admin-only function
+      if secret != "admin123":
+        return "❌ Access denied!"
+      return "🎉 Welcome, admin!"
 
   mcpTool:
     proc encodeMessage(message: string): string =
-      ## Base64 encode a message (because obfuscation is totally security, right?)
+      ## Base64 encode a message
       let encoded = encode(message)
-      return fmt"🔐 Encoded message: {encoded}"
+      return fmt"🔐 Encoded: {encoded}"
 
   mcpTool:
     proc decodeMessage(encoded: string): string =
       ## Base64 decode a message
       try:
         let decoded = decode(encoded)
-        return fmt"🔓 Decoded message: {decoded}"
+        return fmt"🔓 Decoded: {decoded}"
       except:
         return "❌ Invalid encoded message (or you broke the decoder, either way...)"
 
@@ -820,11 +695,9 @@ when isMainModule:
 
 ---
 
-## Chapter 8: The Advanced Stuff
+## Chapter 8: Advanced Features
 
-*"With great power comes great responsibility... and great complexity."*
-
-Ready for the advanced features? This is where we separate the junior developers from the senior developers (and the senior developers from the architects who've forgotten how to code).
+Ready for advanced features? Let's explore middleware, context, and concurrency.
 
 ### Middleware Magic
 
@@ -1010,9 +883,7 @@ when isMainModule:
 
 ---
 
-## Troubleshooting: When Things Go Sideways
-
-*"Debugging is like being the detective in a crime movie where you are also the murderer."*
+## Troubleshooting
 
 ### Common Issues and Solutions
 
@@ -1188,159 +1059,4 @@ Now go forth and build amazing things! 🚀
 
 Happy coding! 🎉
 
-## Chapter 3: The Macro Magic Show
 
-*"Any sufficiently advanced macro is indistinguishable from magic."* - Arthur C. Clarke (probably)
-
-Writing JSON schemas by hand is like doing your taxes with an abacus - technically possible, but why would you want to? Enter NimCP's macro system, which automatically generates schemas from your procedure signatures. It's like having a very smart intern who never complains and always gets the types right.
-
-Create `macro_magic.nim`:
-
-```nim
-import nimcp
-import math, strformat
-
-# The macro way - like having a personal assistant for your API
-mcpServer("macro-magic-server", "1.0.0"):
-  
-  # Tool 1: Simple addition (the schema writes itself!)
-  mcpTool:
-    proc add(a: float, b: float): string =
-      ## Add two numbers together because math is hard
-      ## - a: First number (the lonely one)
-      ## - b: Second number (the friend)
-      return fmt"The sum of {a} and {b} is {a + b}"
-  
-  # Tool 2: String manipulation with multiple parameters
-  mcpTool:
-    proc formatText(text: string, uppercase: bool = false, repeat: int = 1): string =
-      ## Format text with various options
-      ## - text: The text to format
-      ## - uppercase: Whether to SHOUT THE TEXT
-      ## - repeat: How many times to repeat it (because once is never enough)
-      var result = text
-      if uppercase:
-        result = result.toUpperAscii()
-      
-      var finalResult = ""
-      for i in 1..repeat:
-        finalResult.add(result)
-        if i < repeat:
-          finalResult.add(" ")
-      
-      return finalResult
-  
-  # Tool 3: Mathematical wizardry
-  mcpTool:
-    proc calculateCircle(radius: float): string =
-      ## Calculate circle properties because geometry is everywhere
-      ## - radius: The radius of the circle (must be positive, we're not dealing with imaginary circles here)
-      if radius <= 0:
-        return "Error: Radius must be positive. We don't do imaginary geometry here."
-      
-      let area = PI * radius * radius
-      let circumference = 2 * PI * radius
-      
-      return fmt"Circle with radius {radius}: Area = {area:.2f}, Circumference = {circumference:.2f}"
-  
-  # Tool 4: Boolean logic (because true/false is all we really need in life)
-  mcpTool:
-    proc checkPassword(password: string, requireSpecial: bool = true): string =
-      ## Check if a password meets basic requirements
-      ## - password: The password to check
-      ## - requireSpecial: Whether special characters are required
-      let hasUpper = password.anyIt(it.isUpperAscii())
-      let hasLower = password.anyIt(it.isLowerAscii())
-      let hasDigit = password.anyIt(it.isDigit())
-      let hasSpecial = password.anyIt(not (it.isAlphaNumeric()))
-      
-      var issues: seq[string] = @[]
-      
-      if password.len < 8:
-        issues.add("too short (minimum 8 characters)")
-      if not hasUpper:
-        issues.add("needs uppercase letters")
-      if not hasLower:
-        issues.add("needs lowercase letters")
-      if not hasDigit:
-        issues.add("needs numbers")
-      if requireSpecial and not hasSpecial:
-        issues.add("needs special characters")
-      
-      if issues.len == 0:
-        return "✅ Password looks good! (But please don't use 'Password123!')"
-      else:
-        return "❌ Password issues: " & issues.join(", ")
-  
-  # Tool 5: Array/sequence handling (because lists are life)
-  mcpTool:
-    proc findMax(numbers: seq[float]): string =
-      ## Find the maximum number in a list
-      ## - numbers: List of numbers to search through
-      if numbers.len == 0:
-        return "Error: Can't find max of empty list. That's like asking for the loudest silence."
-      
-      let maxNum = max(numbers)
-      let maxIndex = numbers.find(maxNum)
-      
-      return fmt"Maximum value is {maxNum} at position {maxIndex}"
-
-# The magic happens here - no manual schema writing required!
-when isMainModule:
-  echo "🎩 Starting the Macro Magic Server..."
-  echo "Where schemas write themselves and developers stay sane!"
-  echo ""
-  echo "Available tools:"
-  echo "- add: Because 2+2 is still 4 (usually)"
-  echo "- formatText: Text manipulation with style"
-  echo "- calculateCircle: Geometry for the masses"
-  echo "- checkPassword: Password validation (with judgment)"
-  echo "- findMax: Find the biggest number in the room"
-  echo ""
-  
-  runServer()  # Uses stdio by default
-```
-
-### The Magic Revealed
-
-What just happened? The `mcpTool` macro looked at your procedure signature and automatically:
-
-1. **Generated the tool name** from the procedure name
-2. **Created JSON schema** from parameter types (`float`, `string`, `bool`, `seq[float]`)
-3. **Extracted descriptions** from your doc comments
-4. **Handled parameter documentation** from the `## - param: description` format
-5. **Created type-safe wrappers** that convert JSON to Nim types
-
-```mermaid
-graph TD
-    A[Your Nim Proc] --> B[mcpTool Macro]
-    B --> C[JSON Schema Generation]
-    B --> D[Type Conversion Wrapper]
-    B --> E[Error Handling]
-    C --> F[MCP Tool Registration]
-    D --> F
-    E --> F
-```
-
-### Testing the Magic
-
-```bash
-nim c -r macro_magic.nim
-
-# Test the addition
-echo '{"jsonrpc":"2.0","id":"1","method":"tools/call","params":{"name":"add","arguments":{"a":3.14,"b":2.86}}}' | ./macro_magic
-
-# Test text formatting
-echo '{"jsonrpc":"2.0","id":"2","method":"tools/call","params":{"name":"formatText","arguments":{"text":"hello world","uppercase":true,"repeat":3}}}' | ./macro_magic
-
-# Test password checking
-echo '{"jsonrpc":"2.0","id":"3","method":"tools/call","params":{"name":"checkPassword","arguments":{"password":"MySecureP@ss123","requireSpecial":true}}}' | ./macro_magic
-```
-
-### Try This! 🧪
-
-1. **Add a factorial function**: `proc factorial(n: int): string`
-2. **Create a word counter**: `proc countWords(text: string, caseSensitive: bool = false): string`
-3. **Build a temperature converter**: `proc convertTemp(temp: float, fromUnit: string, toUnit: string): string`
-
----
