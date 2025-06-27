@@ -156,18 +156,10 @@ proc handleMcpRequest(transport: MummyTransport, request: Request) {.gcsafe.} =
           request.respond(204, headers, "")
           
       except JsonParsingError as e:
-        let errorResponse = createJsonRpcError(
-          JsonRpcId(kind: jridString, str: ""), 
-          ParseError, 
-          "Parse error: " & e.msg
-        )
+        let errorResponse = createParseError(details = e.msg)
         request.respond(400, headers, $(%errorResponse))
       except Exception as e:
-        let errorResponse = createJsonRpcError(
-          JsonRpcId(kind: jridString, str: ""), 
-          InternalError, 
-          "Internal error: " & e.msg
-        )
+        let errorResponse = createInternalError(JsonRpcId(kind: jridString, str: ""), e.msg)
         request.respond(500, headers, $(%errorResponse))
         
     else:

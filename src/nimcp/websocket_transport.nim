@@ -93,11 +93,7 @@ proc handleJsonRpcMessage(transport: WebSocketTransport, websocket: WebSocket, m
   ## Handle incoming WebSocket JSON-RPC message
   try:
     if message.len == 0:
-      let errorResponse = createJsonRpcError(
-        JsonRpcId(kind: jridString, str: ""), 
-        InvalidRequest, 
-        "Empty message"
-      )
+      let errorResponse = createInvalidRequest(details = "Empty message")
       websocket.send($(%errorResponse))
       return
     
@@ -125,18 +121,10 @@ proc handleJsonRpcMessage(transport: WebSocketTransport, websocket: WebSocket, m
     websocket.send($responseJson)
     
   except JsonParsingError as e:
-    let errorResponse = createJsonRpcError(
-      JsonRpcId(kind: jridString, str: ""), 
-      ParseError, 
-      "Parse error: " & e.msg
-    )
+    let errorResponse = createParseError(details = e.msg)
     websocket.send($(%errorResponse))
   except Exception as e:
-    let errorResponse = createJsonRpcError(
-      JsonRpcId(kind: jridString, str: ""), 
-      InternalError, 
-      "Internal error: " & e.msg
-    )
+    let errorResponse = createInternalError(JsonRpcId(kind: jridString, str: ""), e.msg)
     websocket.send($(%errorResponse))
 
 proc websocketEventHandler(transport: WebSocketTransport, websocket: WebSocket, event: WebSocketEvent, message: Message) {.gcsafe.} =
