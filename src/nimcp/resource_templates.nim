@@ -1,7 +1,7 @@
 ## Resource URI Template Implementation for NimCP
 ## Provides support for dynamic resource URIs with parameter extraction
 
-import json, tables, strutils, sequtils, re, options
+import tables, strutils, re, options
 import types, context
 
 type
@@ -124,14 +124,14 @@ proc handleTemplateRequest*(registry: ResourceTemplateRegistry, uri: string): Op
   # Try context-aware templates first
   let contextMatch = registry.findTemplateWithContext(uri)
   if contextMatch.isSome:
-    let (resourceTemplate, params, handler) = contextMatch.get()
+    let (_, params, handler) = contextMatch.get()
     let ctx = newMcpRequestContext()
     return some(handler(ctx, uri, params))
 
   # Try regular templates
   let match = registry.findTemplate(uri)
   if match.isSome:
-    let (resourceTemplate, params, handler) = match.get()
+    let (_, params, handler) = match.get()
     return some(handler(uri, params))
 
   none(McpResourceContents)
@@ -141,13 +141,13 @@ proc handleTemplateRequestWithContext*(registry: ResourceTemplateRegistry, ctx: 
   # Try context-aware templates first
   let contextMatch = registry.findTemplateWithContext(uri)
   if contextMatch.isSome:
-    let (resourceTemplate, params, handler) = contextMatch.get()
+    let (_, params, handler) = contextMatch.get()
     return some(handler(ctx, uri, params))
 
   # Try regular templates with new context
   let match = registry.findTemplate(uri)
   if match.isSome:
-    let (resourceTemplate, params, handler) = match.get()
+    let (_, params, handler) = match.get()
     return some(handler(uri, params))
 
   none(McpResourceContents)
@@ -164,7 +164,7 @@ proc listTemplates*(registry: ResourceTemplateRegistry): seq[McpResourceTemplate
 proc validateTemplate*(uriTemplate: string): bool =
   ## Validate that a URI template is well-formed
   try:
-    let matcher = compileUriTemplate(uriTemplate)
+    discard compileUriTemplate(uriTemplate)
     true
   except:
     false

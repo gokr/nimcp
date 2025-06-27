@@ -151,7 +151,7 @@ macro mcpTool*(procDef: untyped): untyped =
   
   let procName = actualProcDef[0]
   let params = actualProcDef[3]  # Parameters
-  let body = actualProcDef[6]     # Body
+  discard actualProcDef[6]       # Body (not used in tool generation)
   
   # Extract tool name from proc name
   let toolName = $procName
@@ -185,14 +185,7 @@ macro mcpTool*(procDef: untyped): untyped =
     newCall(procName, callArgs)
   else:
     newCall(procName)
-  
-  # Check if the proc is async (returns Future)
-  let isAsync = if params.len > 0 and params[0].kind == nnkIdentDefs:
-    let returnType = params[0][^2]
-    returnType.kind == nnkBracketExpr and $returnType[0] == "Future"
-  else:
-    false
-  
+    
   result = newStmtList()
   
   # Add the original proc definition first

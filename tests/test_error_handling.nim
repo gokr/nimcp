@@ -11,16 +11,16 @@ suite "Error Handling Tests":
     
     # Test malformed JSON
     try:
-      let badRequest = parseJsonRpcMessage("{invalid json}")
+      discard parseJsonRpcMessage("{invalid json}")
       fail()  # Should not reach here
-    except:
+    except CatchableError:
       check true  # Expected to fail
 
     # Test missing required fields
     try:
-      let noMethod = parseJsonRpcMessage("""{"jsonrpc": "2.0", "id": 1}""")
+      discard parseJsonRpcMessage("""{"jsonrpc": "2.0", "id": 1}""")
       fail()  # Should not reach here
-    except:
+    except CatchableError:
       check true  # Expected to fail
   
   test "Tool registration edge cases":

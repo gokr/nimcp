@@ -79,12 +79,12 @@ proc addConnection(transport: WebSocketTransport, connection: WebSocketConnectio
   withLock transport.connectionsLock:
     transport.connections[connection.id] = connection
 
-proc removeConnection(transport: WebSocketTransport, connectionId: string) =
+proc removeConnection(transport: WebSocketTransport, connectionId: string) {.used.} =
   ## Thread-safe connection removal
   withLock transport.connectionsLock:
     transport.connections.del(connectionId)
 
-proc getConnection(transport: WebSocketTransport, connectionId: string): WebSocketConnection =
+proc getConnection(transport: WebSocketTransport, connectionId: string): WebSocketConnection {.used.} =
   ## Thread-safe connection retrieval
   withLock transport.connectionsLock:
     return transport.connections.getOrDefault(connectionId, nil)
@@ -162,7 +162,6 @@ proc websocketEventHandler(transport: WebSocketTransport, websocket: WebSocket, 
           echo fmt"WebSocket error on connection {id}"
           transport.connections.del(id)
           break
-
 proc upgradeHandler(transport: WebSocketTransport, request: Request) {.gcsafe.} =
   ## Handle WebSocket upgrade requests
   
@@ -175,7 +174,7 @@ proc upgradeHandler(transport: WebSocketTransport, request: Request) {.gcsafe.} 
     return
   
   # Upgrade to WebSocket - Mummy handles the upgrade internally
-  let websocket = request.upgradeToWebSocket()
+  discard request.upgradeToWebSocket()
   
   # WebSocket events will be handled by the websocketEventHandler
 

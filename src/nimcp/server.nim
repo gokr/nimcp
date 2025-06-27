@@ -3,9 +3,9 @@
 ## This module provides the main MCP server implementation using the modern
 ## taskpools library for better performance and energy efficiency.
 
-import json, tables, options, locks, cpuinfo, strutils, times, algorithm
+import json, tables, options, locks, cpuinfo, strutils, algorithm
 import taskpools
-import types, protocol, context, schema, resource_templates, logging
+import types, protocol, context, resource_templates, logging
 
 # Fine-grained locks for thread-safe access to server data structures
 var toolsLock: Lock

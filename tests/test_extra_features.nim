@@ -1,6 +1,6 @@
 ## Tests resource templates, server composition, logging, and streaming
 
-import unittest, json, tables, options, strutils, times
+import unittest, json, tables, options, times
 import ../src/nimcp
 
 suite "Extra Features Tests":

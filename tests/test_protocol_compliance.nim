@@ -1,7 +1,7 @@
 ## Tests for MCP protocol compliance and JSON-RPC 2.0 specification
 ## Ensures the server correctly implements the protocol standards
 
-import unittest, json, options, tables, strutils
+import unittest, json, options, strutils
 import ../src/nimcp
 
 suite "Protocol Compliance Tests":

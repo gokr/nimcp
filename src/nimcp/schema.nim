@@ -2,7 +2,6 @@
 ## Provides enhanced type support including objects, unions, enums, and optional types
 
 import json, tables, options, macros, typetraits, strutils, sequtils, math
-import types
 
 # Enhanced schema generation
 type
@@ -227,8 +226,6 @@ proc validateJsonAgainstSchema*(json: JsonNode, schema: JsonNode): tuple[valid: 
 # Object schema generation macro
 macro generateObjectSchema*(typeDef: typedesc): untyped =
   ## Generate JSON schema for a custom object type
-  let typeImpl = typeDef.getTypeImpl()
-  
   result = quote do:
     proc getSchema*(T: typedesc[`typeDef`]): JsonNode =
       var builder = newSchemaBuilder("object")
