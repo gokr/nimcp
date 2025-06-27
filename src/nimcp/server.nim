@@ -359,13 +359,10 @@ proc handleToolsList(server: McpServer): JsonNode {.gcsafe.} =
   return createToolsListResponseJson(tools)
 
 proc handleToolsCall(server: McpServer, params: JsonNode, ctx: McpRequestContext = nil): JsonNode {.gcsafe.} =
-  if not params.hasKey("name"):
-    raise newException(ValueError, "Missing required parameter: name")
-  
-  let toolName = params["name"].getStr()
+  let toolName = requireStringField(params, "name")
   if toolName.len == 0:
     raise newException(ValueError, "Tool name cannot be empty")
-  
+
   let args = if params.hasKey("arguments"): params["arguments"] else: newJObject()
   
   # Check for context-aware handler first
@@ -395,23 +392,10 @@ proc handleToolsCall(server: McpServer, params: JsonNode, ctx: McpRequestContext
     else:
       regularHandler(args)
     
-    # Create response manually to avoid GC safety issues  
-    var responseJson = newJObject()
-    responseJson["content"] = newJArray()
-    for content in res.content:
-      var contentJson = newJObject()
-      contentJson["type"] = newJString(content.`type`)
-      case content.kind:
-      of TextContent:
-        contentJson["text"] = newJString(content.text)
-      of ImageContent:
-        contentJson["data"] = newJString(content.data)
-        contentJson["mimeType"] = newJString(content.mimeType)
-      of ResourceContent:
-        # Skip resource content for now to avoid more GC safety issues
-        discard
-      responseJson["content"].add(contentJson)
-    return responseJson
+    # Use consolidated JSON utilities for consistent serialization
+    return %*{
+      "content": contentsToJsonArray(res.content)
+    }
   except RequestCancellation:
     raise newException(ValueError, "Tool execution cancelled for '" & toolName & "'")
   except RequestTimeout:
@@ -427,10 +411,7 @@ proc handleResourcesList(server: McpServer): JsonNode {.gcsafe.} =
   return createResourcesListResponseJson(resources)
 
 proc handleResourcesRead(server: McpServer, params: JsonNode, ctx: McpRequestContext = nil): JsonNode {.gcsafe.} =
-  if not params.hasKey("uri"):
-    raise newException(ValueError, "Missing required parameter: uri")
-  
-  let uri = params["uri"].getStr()
+  let uri = requireStringField(params, "uri")
   if uri.len == 0:
     raise newException(ValueError, "Resource URI cannot be empty")
   
@@ -502,26 +483,8 @@ proc handleResourcesRead(server: McpServer, params: JsonNode, ctx: McpRequestCon
     else:
       regularHandler(uri)
     
-    # Create response manually to avoid GC safety issues
-    var responseJson = newJObject()
-    responseJson["uri"] = newJString(res.uri)
-    if res.mimeType.isSome:
-      responseJson["mimeType"] = newJString(res.mimeType.get)
-    responseJson["content"] = newJArray()
-    for content in res.content:
-      var contentJson = newJObject()
-      contentJson["type"] = newJString(content.`type`)
-      case content.kind:
-      of TextContent:
-        contentJson["text"] = newJString(content.text)
-      of ImageContent:
-        contentJson["data"] = newJString(content.data)
-        contentJson["mimeType"] = newJString(content.mimeType)
-      of ResourceContent:
-        # Skip resource content for now to avoid more GC safety issues
-        discard
-      responseJson["content"].add(contentJson)
-    return responseJson
+    # Use consolidated JSON utilities for consistent serialization
+    return %res
   except RequestCancellation:
     raise newException(ValueError, "Resource access cancelled for '" & uri & "'")
   except RequestTimeout:
@@ -537,10 +500,7 @@ proc handlePromptsList(server: McpServer): JsonNode {.gcsafe.} =
   return createPromptsListResponseJson(prompts)
 
 proc handlePromptsGet(server: McpServer, params: JsonNode, ctx: McpRequestContext = nil): JsonNode {.gcsafe.} =
-  if not params.hasKey("name"):
-    raise newException(ValueError, "Missing required parameter: name")
-  
-  let promptName = params["name"].getStr()
+  let promptName = requireStringField(params, "name")
   if promptName.len == 0:
     raise newException(ValueError, "Prompt name cannot be empty")
   
