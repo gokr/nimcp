@@ -1,6 +1,6 @@
 ## Core MCP protocol types and data structures
 
-import json, tables, options
+import json, tables, options, times
 import json_serialization
 
 # Constants
@@ -137,10 +137,56 @@ type
     Assistant = "assistant"
     System = "system"
 
-  # Handler function types
+    # Request context types
+  McpRequestContext* = ref object
+    ## Request context providing access to server state and utilities
+    requestId*: string
+    startTime*: DateTime
+    cancelled*: bool
+    progressCallback*: proc(message: string, progress: float) {.gcsafe.}
+    logCallback*: proc(level: string, message: string) {.gcsafe.}
+    metadata*: Table[string, JsonNode]
+  
+  McpProgressInfo* = object
+    ## Progress tracking information
+    message*: string
+    progress*: float  # 0.0 to 1.0
+    timestamp*: DateTime
+  
+  # Enhanced error types with context
+  McpErrorLevel* = enum
+    melInfo = "info"
+    melWarning = "warning" 
+    melError = "error"
+    melCritical = "critical"
+  
+  McpStructuredError* = object
+    ## Enhanced error type with context and categorization
+    code*: int
+    level*: McpErrorLevel
+    message*: string
+    details*: Option[string]
+    context*: Option[Table[string, JsonNode]]
+    timestamp*: DateTime
+    requestId*: Option[string]
+    stackTrace*: Option[string]
+  
+  # Enhanced handler function types with context
   McpToolHandler* = proc(args: JsonNode): McpToolResult {.gcsafe, closure.}
+  McpToolHandlerWithContext* = proc(ctx: McpRequestContext, args: JsonNode): McpToolResult {.gcsafe, closure.}
   McpResourceHandler* = proc(uri: string): McpResourceContents {.gcsafe, closure.}
+  McpResourceHandlerWithContext* = proc(ctx: McpRequestContext, uri: string): McpResourceContents {.gcsafe, closure.}
   McpPromptHandler* = proc(name: string, args: Table[string, JsonNode]): McpGetPromptResult {.gcsafe, closure.}
+  McpPromptHandlerWithContext* = proc(ctx: McpRequestContext, name: string, args: Table[string, JsonNode]): McpGetPromptResult {.gcsafe, closure.}
+  
+  # Middleware types
+  McpMiddleware* = object
+    ## Middleware for request/response processing
+    name*: string
+    priority*: int  # Lower numbers execute first
+    beforeRequest*: proc(ctx: McpRequestContext, request: JsonRpcRequest): JsonRpcRequest {.gcsafe.}
+    afterResponse*: proc(ctx: McpRequestContext, response: JsonRpcResponse): JsonRpcResponse {.gcsafe.}
+    onError*: proc(ctx: McpRequestContext, error: McpStructuredError): McpStructuredError {.gcsafe.}
 
 # Custom JSON serialization for JsonRpcId
 proc `%`*(id: JsonRpcId): JsonNode =
@@ -176,12 +222,16 @@ const
   McpAuthenticationRequired* = -32004 ## Authentication is required
   McpAuthenticationFailed* = -32005   ## Authentication failed
   McpRateLimitExceeded* = -32006     ## Rate limit exceeded
+  McpRequestCancelled* = -32007      ## Request was cancelled
+  McpValidationError* = -32008       ## Parameter validation failed
+  McpMiddlewareError* = -32009       ## Middleware processing error
 
 # Transport configuration types
 type
   McpTransportKind* = enum
     mtStdio,    ## Standard input/output transport
-    mtHttp      ## HTTP transport
+    mtHttp,     ## HTTP transport
+    mtWebSocket ## WebSocket transport
   
   McpTransportConfig* = object
     case kind*: McpTransportKind
@@ -192,6 +242,47 @@ type
       host*: string
       requireHttps*: bool
       tokenValidator*: proc(token: string): bool {.gcsafe.}
+    of mtWebSocket:
+      wsPort*: int
+      wsHost*: string
+      wsRequireHttps*: bool
+      wsTokenValidator*: proc(token: string): bool {.gcsafe.}
+
+# Enhanced content types for advanced schema support
+type
+  McpSchemaType* = enum
+    mstString = "string"
+    mstInteger = "integer" 
+    mstNumber = "number"
+    mstBoolean = "boolean"
+    mstArray = "array"
+    mstObject = "object"
+    mstNull = "null"
+    mstUnion = "union"
+    mstEnum = "enum"
+  
+  McpUnionType* = object
+    ## Union type for multiple allowed types
+    anyOf*: seq[JsonNode]
+  
+  McpEnumType* = object
+    ## Enum type for constrained string values
+    `enum`*: seq[string]
+    description*: Option[string]
+  
+  McpObjectProperty* = object
+    ## Object property definition
+    `type`*: McpSchemaType
+    description*: Option[string]
+    required*: bool
+    default*: Option[JsonNode]
+    schema*: Option[JsonNode]  # For nested objects
+  
+  McpObjectSchema* = object
+    ## Object schema definition
+    properties*: Table[string, McpObjectProperty]
+    required*: seq[string]
+    additionalProperties*: bool
 
 # Convenience constructor functions for transport configs
 proc StdioTransport*(): McpTransportConfig =
@@ -219,3 +310,31 @@ proc HttpTransportAuth*(port: int = 8080, host: string = "127.0.0.1",
     requireHttps: requireHttps,
     tokenValidator: tokenValidator
   )
+
+proc WebSocketTransport*(port: int = 8080, host: string = "127.0.0.1"): McpTransportConfig =
+  ## Create a WebSocket transport configuration
+  McpTransportConfig(
+    kind: mtWebSocket,
+    wsPort: port,
+    wsHost: host,
+    wsRequireHttps: false,
+    wsTokenValidator: nil
+  )
+
+proc WebSocketTransportAuth*(port: int = 8080, host: string = "127.0.0.1", 
+                            requireHttps: bool = false, 
+                            tokenValidator: proc(token: string): bool {.gcsafe.}): McpTransportConfig =
+  ## Create a WebSocket transport configuration with authentication
+  McpTransportConfig(
+    kind: mtWebSocket,
+    wsPort: port,
+    wsHost: host,
+    wsRequireHttps: requireHttps,
+    wsTokenValidator: tokenValidator
+  )
+
+# Context utility functions are now in context.nim module to avoid duplication
+
+# Structured error utilities are now in context.nim module to avoid duplication
+
+# Convenience functions for content creation are in protocol.nim to avoid duplication
