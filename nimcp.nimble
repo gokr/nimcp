@@ -7,7 +7,6 @@ srcDir        = "src"
 
 # Dependencies
 requires "nim >= 2.2.4"
-requires "json_serialization"
 requires "mummy"
 requires "taskpools"
 
@@ -25,3 +24,4 @@ task test, "Run all tests":
   exec "nim c -r tests/test_error_handling.nim"
   exec "nim c -r tests/test_protocol_compliance.nim"
   exec "nim c -r tests/test_edge_cases.nim"
+  exec "nim c -r tests/test_phase2_features.nim"

@@ -1,7 +1,6 @@
 ## MCP protocol message handling and JSON-RPC 2.0 implementation
 
 import json, options, tables
-import json_serialization
 import types
 
 # JSON-RPC 2.0 message creation helpers
@@ -81,29 +80,112 @@ proc cleanCapabilities*(caps: McpCapabilities): JsonNode =
     if caps.prompts.get.listChanged.isSome:
       promptsCap["listChanged"] = %caps.prompts.get.listChanged.get
     result["prompts"] = promptsCap
-  
+
   if caps.logging.isSome:
     result["logging"] = caps.logging.get
-    
+
   if caps.experimental.isSome:
     result["experimental"] = %caps.experimental.get
 
-# MCP-specific message handling
-proc createInitializeResponse*(serverInfo: McpServerInfo, capabilities: McpCapabilities): JsonNode =
+  return result
+
+# MCP-specific message handling using object variants
+proc createInitializeResponse*(serverInfo: McpServerInfo, capabilities: McpCapabilities): McpResponse =
+  McpResponse(
+    kind: mrInitialize,
+    protocolVersion: MCP_PROTOCOL_VERSION,
+    serverInfo: serverInfo,
+    capabilities: capabilities
+  )
+
+proc createToolsListResponse*(tools: seq[McpTool]): McpResponse =
+  McpResponse(
+    kind: mrToolsList,
+    tools: tools
+  )
+
+proc createResourcesListResponse*(resources: seq[McpResource]): McpResponse =
+  McpResponse(
+    kind: mrResourcesList,
+    resources: resources
+  )
+
+proc createPromptsListResponse*(prompts: seq[McpPrompt]): McpResponse =
+  McpResponse(
+    kind: mrPromptsList,
+    prompts: prompts
+  )
+
+proc createToolsCallResponse*(toolResult: McpToolResult): McpResponse =
+  McpResponse(
+    kind: mrToolsCall,
+    toolResult: toolResult
+  )
+
+proc createResourcesReadResponse*(resourceContents: McpResourceContents): McpResponse =
+  McpResponse(
+    kind: mrResourcesRead,
+    resourceContents: resourceContents
+  )
+
+proc createPromptsGetResponse*(promptResult: McpGetPromptResult): McpResponse =
+  McpResponse(
+    kind: mrPromptsGet,
+    promptResult: promptResult
+  )
+
+proc createErrorResponse*(error: McpStructuredError): McpResponse =
+  McpResponse(
+    kind: mrError,
+    error: error
+  )
+
+# Legacy JSON response functions for backward compatibility
+proc createInitializeResponseJson*(serverInfo: McpServerInfo, capabilities: McpCapabilities): JsonNode =
   %*{
     "protocolVersion": MCP_PROTOCOL_VERSION,
     "serverInfo": serverInfo,
     "capabilities": cleanCapabilities(capabilities)
   }
 
-proc createToolsListResponse*(tools: seq[McpTool]): JsonNode =
+proc createToolsListResponseJson*(tools: seq[McpTool]): JsonNode =
   %*{"tools": tools}
 
-proc createResourcesListResponse*(resources: seq[McpResource]): JsonNode =
+proc createResourcesListResponseJson*(resources: seq[McpResource]): JsonNode =
   %*{"resources": resources}
 
-proc createPromptsListResponse*(prompts: seq[McpPrompt]): JsonNode =
+proc createPromptsListResponseJson*(prompts: seq[McpPrompt]): JsonNode =
   %*{"prompts": prompts}
+
+# Convert McpResponse to JsonNode for serialization
+proc toJsonNode*(response: McpResponse): JsonNode =
+  case response.kind:
+  of mrInitialize:
+    result = %*{
+      "protocolVersion": response.protocolVersion,
+      "serverInfo": response.serverInfo,
+      "capabilities": cleanCapabilities(response.capabilities)
+    }
+  of mrToolsList:
+    result = %*{"tools": response.tools}
+  of mrToolsCall:
+    result = %response.toolResult
+  of mrResourcesList:
+    result = %*{"resources": response.resources}
+  of mrResourcesRead:
+    result = %response.resourceContents
+  of mrPromptsList:
+    result = %*{"prompts": response.prompts}
+  of mrPromptsGet:
+    result = %response.promptResult
+  of mrError:
+    # Use custom serialization to avoid DateTime issues
+    result = newJObject()
+    result["code"] = %response.error.code
+    result["message"] = %response.error.message
+
+  return result
+
 
 # Content creation helpers
 proc createTextContent*(text: string): McpContent =

@@ -1,11 +1,12 @@
 ## Core MCP protocol types and data structures
 
 import json, tables, options, times
-import json_serialization
 
 # Constants
 const
   MCP_PROTOCOL_VERSION* = "2024-11-05"  ## Current MCP protocol version
+
+
 
 type
   # JSON-RPC 2.0 base types
@@ -96,7 +97,7 @@ type
     mimeType*: Option[string]
     content*: seq[McpContent]
 
-  # Prompt types  
+  # Prompt types
   McpPrompt* = object
     name*: string
     description*: Option[string]
@@ -114,6 +115,61 @@ type
   McpGetPromptResult* = object
     description*: Option[string]
     messages*: seq[McpPromptMessage]
+
+  # JSON Schema types using object variants
+  JsonSchemaKind* = enum
+    jsObject, jsString, jsNumber, jsInteger, jsBool, jsArray, jsNull
+
+  JsonSchemaRef* = ref JsonSchema
+
+  JsonSchema* = object
+    description*: Option[string]
+    case kind*: JsonSchemaKind
+    of jsObject:
+      properties*: Table[string, JsonSchemaRef]
+      required*: seq[string]
+      additionalProperties*: Option[bool]
+    of jsString:
+      enumValues*: seq[string]  # For string enums
+      pattern*: Option[string]
+      minLength*: Option[int]
+      maxLength*: Option[int]
+    of jsNumber, jsInteger:
+      minimum*: Option[float]
+      maximum*: Option[float]
+      multipleOf*: Option[float]
+    of jsArray:
+      items*: Option[JsonSchemaRef]
+      minItems*: Option[int]
+      maxItems*: Option[int]
+    of jsBool, jsNull:
+      discard  # No additional properties needed
+
+  # Response types using object variants
+  McpResponseKind* = enum
+    mrInitialize, mrToolsList, mrToolsCall, mrResourcesList, mrResourcesRead,
+    mrPromptsList, mrPromptsGet, mrError
+
+  McpResponse* = object
+    case kind*: McpResponseKind
+    of mrInitialize:
+      protocolVersion*: string
+      serverInfo*: McpServerInfo
+      capabilities*: McpCapabilities
+    of mrToolsList:
+      tools*: seq[McpTool]
+    of mrToolsCall:
+      toolResult*: McpToolResult
+    of mrResourcesList:
+      resources*: seq[McpResource]
+    of mrResourcesRead:
+      resourceContents*: McpResourceContents
+    of mrPromptsList:
+      prompts*: seq[McpPrompt]
+    of mrPromptsGet:
+      promptResult*: McpGetPromptResult
+    of mrError:
+      error*: McpStructuredError
 
   # Content types
   McpContentType* = enum
@@ -189,21 +245,35 @@ type
     onError*: proc(ctx: McpRequestContext, error: McpStructuredError): McpStructuredError {.gcsafe.}
 
 # Custom JSON serialization for JsonRpcId
-proc `%`*(id: JsonRpcId): JsonNode =
+proc `%`*(id: JsonRpcId): JsonNode {.gcsafe.} =
   case id.kind
   of jridString:
-    return %id.str
+    %id.str
   of jridInt:
-    return %id.num
+    %id.num
+
+
 
 proc to*(node: JsonNode, T: typedesc[JsonRpcId]): JsonRpcId =
   case node.kind
   of JString:
-    return JsonRpcId(kind: jridString, str: node.getStr())
+    JsonRpcId(kind: jridString, str: node.getStr())
   of JInt:
-    return JsonRpcId(kind: jridInt, num: node.getInt())
+    JsonRpcId(kind: jridInt, num: node.getInt())
   else:
     raise newException(ValueError, "Invalid JsonRpcId format")
+
+proc to*(node: JsonNode, T: typedesc[JsonRpcRequest]): JsonRpcRequest =
+  result = JsonRpcRequest(
+    jsonrpc: node.getOrDefault("jsonrpc").getStr("2.0"),
+    `method`: node["method"].getStr()
+  )
+  
+  if node.hasKey("id"):
+    result.id = some(node["id"].to(JsonRpcId))
+  
+  if node.hasKey("params"):
+    result.params = some(node["params"])
 
 # JSON-RPC error codes (as per JSON-RPC 2.0 specification)
 const
@@ -284,6 +354,211 @@ type
     required*: seq[string]
     additionalProperties*: bool
 
+# JSON Schema conversion functions
+proc toJsonNode*(schema: JsonSchemaRef): JsonNode {.gcsafe.} =
+  ## Convert JsonSchema to JsonNode for serialization
+  if schema == nil:
+    result = newJNull()
+    return
+
+  result = newJObject()
+
+  if schema.description.isSome:
+    result["description"] = %schema.description.get
+
+  case schema.kind:
+  of jsObject:
+    result["type"] = %"object"
+    if schema.properties.len > 0:
+      var props = newJObject()
+      for key, value in schema.properties:
+        props[key] = toJsonNode(value)
+      result["properties"] = props
+    if schema.required.len > 0:
+      result["required"] = %schema.required
+    if schema.additionalProperties.isSome:
+      result["additionalProperties"] = %schema.additionalProperties.get
+  of jsString:
+    result["type"] = %"string"
+    if schema.enumValues.len > 0:
+      result["enum"] = %schema.enumValues
+    if schema.pattern.isSome:
+      result["pattern"] = %schema.pattern.get
+    if schema.minLength.isSome:
+      result["minLength"] = %schema.minLength.get
+    if schema.maxLength.isSome:
+      result["maxLength"] = %schema.maxLength.get
+  of jsNumber:
+    result["type"] = %"number"
+    if schema.minimum.isSome:
+      result["minimum"] = %schema.minimum.get
+    if schema.maximum.isSome:
+      result["maximum"] = %schema.maximum.get
+    if schema.multipleOf.isSome:
+      result["multipleOf"] = %schema.multipleOf.get
+  of jsInteger:
+    result["type"] = %"integer"
+    if schema.minimum.isSome:
+      result["minimum"] = %schema.minimum.get
+    if schema.maximum.isSome:
+      result["maximum"] = %schema.maximum.get
+    if schema.multipleOf.isSome:
+      result["multipleOf"] = %schema.multipleOf.get
+  of jsBool:
+    result["type"] = %"boolean"
+  of jsArray:
+    result["type"] = %"array"
+    if schema.items.isSome:
+      result["items"] = toJsonNode(schema.items.get)
+    if schema.minItems.isSome:
+      result["minItems"] = %schema.minItems.get
+    if schema.maxItems.isSome:
+      result["maxItems"] = %schema.maxItems.get
+  of jsNull:
+    result["type"] = %"null"
+
+# Custom JSON serialization for JsonSchemaRef
+proc `%`*(schema: JsonSchemaRef): JsonNode {.gcsafe.} =
+  toJsonNode(schema)
+
+# Custom JSON serialization for McpToolResult
+proc `%`*(toolResult: McpToolResult): JsonNode {.gcsafe.} =
+  result = newJObject()
+  result["content"] = newJArray()
+  for content in toolResult.content:
+    var contentJson = newJObject()
+    contentJson["type"] = newJString(content.`type`)
+    case content.kind:
+    of TextContent:
+      contentJson["text"] = newJString(content.text)
+    of ImageContent:
+      contentJson["data"] = newJString(content.data)
+      contentJson["mimeType"] = newJString(content.mimeType)
+    of ResourceContent:
+      # Skip resource content for now
+      discard
+    result["content"].add(contentJson)
+
+# Custom JSON serialization for McpResourceContents
+proc `%`*(resource: McpResourceContents): JsonNode {.gcsafe.} =
+  result = newJObject()
+  result["uri"] = newJString(resource.uri)
+  if resource.mimeType.isSome:
+    result["mimeType"] = newJString(resource.mimeType.get)
+  result["content"] = newJArray()
+  for content in resource.content:
+    var contentJson = newJObject()
+    contentJson["type"] = newJString(content.`type`)
+    case content.kind:
+    of TextContent:
+      contentJson["text"] = newJString(content.text)
+    of ImageContent:
+      contentJson["data"] = newJString(content.data)
+      contentJson["mimeType"] = newJString(content.mimeType)
+    of ResourceContent:
+      # Skip resource content for now
+      discard
+    result["content"].add(contentJson)
+
+proc fromJsonNode*(node: JsonNode): JsonSchemaRef =
+  ## Convert JsonNode to JsonSchema for type safety
+  if node == nil or node.kind == JNull:
+    result = nil
+    return
+
+  let schemaType = node.getOrDefault("type").getStr("object")
+  let kind = case schemaType:
+    of "object": jsObject
+    of "string": jsString
+    of "number": jsNumber
+    of "integer": jsInteger
+    of "boolean": jsBool
+    of "array": jsArray
+    of "null": jsNull
+    else: jsObject
+
+  result = JsonSchemaRef(kind: kind)
+
+  if node.hasKey("description"):
+    result.description = some(node["description"].getStr())
+
+  case kind:
+  of jsObject:
+    result.properties = initTable[string, JsonSchemaRef]()
+    result.required = @[]
+    if node.hasKey("properties"):
+      for key, value in node["properties"]:
+        result.properties[key] = fromJsonNode(value)
+    if node.hasKey("required"):
+      for item in node["required"]:
+        result.required.add(item.getStr())
+    if node.hasKey("additionalProperties"):
+      result.additionalProperties = some(node["additionalProperties"].getBool())
+  of jsString:
+    result.enumValues = @[]
+    if node.hasKey("enum"):
+      for item in node["enum"]:
+        result.enumValues.add(item.getStr())
+    if node.hasKey("pattern"):
+      result.pattern = some(node["pattern"].getStr())
+    if node.hasKey("minLength"):
+      result.minLength = some(node["minLength"].getInt())
+    if node.hasKey("maxLength"):
+      result.maxLength = some(node["maxLength"].getInt())
+  of jsNumber, jsInteger:
+    if node.hasKey("minimum"):
+      result.minimum = some(node["minimum"].getFloat())
+    if node.hasKey("maximum"):
+      result.maximum = some(node["maximum"].getFloat())
+    if node.hasKey("multipleOf"):
+      result.multipleOf = some(node["multipleOf"].getFloat())
+  of jsArray:
+    if node.hasKey("items"):
+      result.items = some(fromJsonNode(node["items"]))
+    if node.hasKey("minItems"):
+      result.minItems = some(node["minItems"].getInt())
+    if node.hasKey("maxItems"):
+      result.maxItems = some(node["maxItems"].getInt())
+  of jsBool, jsNull:
+    discard
+
+# Schema builder helper functions
+proc newObjectSchema*(description: string = ""): JsonSchemaRef =
+  ## Create a new object schema
+  result = JsonSchemaRef(
+    kind: jsObject,
+    properties: initTable[string, JsonSchemaRef](),
+    required: @[]
+  )
+  if description.len > 0:
+    result.description = some(description)
+
+proc newStringSchema*(description: string = "", enumValues: seq[string] = @[]): JsonSchemaRef =
+  ## Create a new string schema
+  result = JsonSchemaRef(
+    kind: jsString,
+    enumValues: enumValues
+  )
+  if description.len > 0:
+    result.description = some(description)
+
+proc newNumberSchema*(description: string = "", minimum: Option[float] = none(float), maximum: Option[float] = none(float)): JsonSchemaRef =
+  ## Create a new number schema
+  result = JsonSchemaRef(
+    kind: jsNumber,
+    minimum: minimum,
+    maximum: maximum
+  )
+  if description.len > 0:
+    result.description = some(description)
+
+proc addProperty*(schema: JsonSchemaRef, name: string, propSchema: JsonSchemaRef, required: bool = false) =
+  ## Add a property to an object schema
+  if schema.kind == jsObject:
+    schema.properties[name] = propSchema
+    if required:
+      schema.required.add(name)
+
 # Convenience constructor functions for transport configs
 proc StdioTransport*(): McpTransportConfig =
   ## Create a stdio transport configuration
@@ -338,3 +613,5 @@ proc WebSocketTransportAuth*(port: int = 8080, host: string = "127.0.0.1",
 # Structured error utilities are now in context.nim module to avoid duplication
 
 # Convenience functions for content creation are in protocol.nim to avoid duplication
+
+# Server composition types moved to server.nim to avoid circular dependency
