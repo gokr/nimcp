@@ -9,14 +9,25 @@
 
 ## Features
 
-- 🚀 **Macro-driven API** - Define servers, tools, resources, and prompts with simple, declarative syntax
-- 📡 **Full MCP Support** - Complete implementation of MCP specification with JSON-RPC 2.0
-- 🌐 **Multiple Transports** - Supports stdio, HTTP, and WebSocket transports (via Mummy web server)
-- ⚡ **High Performance** - Efficient implementation with modern taskpools for concurrent processing
-- 🔗 **Real-time Communication** - WebSocket support for bidirectional, low-latency communication
-- 🛠️ **Type Safe** - Leverages Nim's strong type system for reliability
-- 📦 **Minimal Dependencies** - Uses only essential, well-maintained packages
-- 🔧 **Easy Integration** - Works with any MCP-compatible LLM application
+- **Macro-driven API** - Define servers, tools, resources, and prompts with simple, declarative syntax
+- **Full MCP 2024-11-05 Support** - Complete implementation of MCP specification with JSON-RPC 2.0
+- **Multiple Transports** - Supports stdio, HTTP, and WebSocket transports with authentication
+- **Type Safe** - Leverages Nim's strong type system for reliability and performance
+- **Enhanced Type System** - Support for objects, unions, enums, optional types, and arrays
+- **Automatic Schema Generation** - JSON schemas generated from Nim type signatures
+- **Request Context System** - Progress tracking, cancellation, and request lifecycle management
+- **Structured Error Handling** - Enhanced error types with context propagation and categorization
+- **Resource URI Templates** - Dynamic URI patterns with parameter extraction (`/users/{id}`)
+- **Server Composition** - Mount multiple MCP servers with prefixes and routing for API gateways
+- **Pluggable Logging** - Flexible logging system with multiple handlers, levels, and structured output
+- **HTTP Streaming** - Server-Sent Events for real-time progress updates and live data streaming
+- **Middleware Pipeline** - Request/response transformation and processing hooks
+- **Fluent UFCS API** - Method chaining patterns for elegant server configuration
+- **High Performance** - Efficient implementation with modern taskpools for concurrent processing
+- **Thread Safety** - Granular locking and thread-safe operations throughout
+- **Comprehensive Testing** - Full test suite covering all features and edge cases
+- **Minimal Dependencies** - Uses only essential, well-maintained packages
+- **Easy Integration** - Works with any MCP-compatible LLM application
 
 ## Quick Start
 
@@ -153,17 +164,24 @@ mcpTool:
 
 ## Examples
 
-Check out the `examples/` directory for complete examples:
+Check out the `examples/` directory for comprehensive examples:
 
 - [`simple_server.nim`](examples/simple_server.nim) - Basic server with echo and time tools (stdio)
 - [`calculator_server.nim`](examples/calculator_server.nim) - Calculator with multiple tools and resources (manual API, stdio)
 - [`macro_calculator.nim`](examples/macro_calculator.nim) - Calculator using macro API with automatic introspection (stdio)
 - [`macro_mummy_calculator.nim`](examples/macro_mummy_calculator.nim) - Calculator using macro API over HTTP transport
 - [`mummy_calculator.nim`](examples/mummy_calculator.nim) - Calculator using manual API over HTTP transport
+- [`authenticated_mummy_calculator.nim`](examples/authenticated_mummy_calculator.nim) - HTTP calculator with Bearer token authentication
 - [`websocket_calculator.nim`](examples/websocket_calculator.nim) - Calculator using macro API over WebSocket transport (real-time)
 - [`authenticated_websocket_calculator.nim`](examples/authenticated_websocket_calculator.nim) - WebSocket calculator with Bearer token authentication
+- [`resource_templates_example.nim`](examples/resource_templates_example.nim) - Dynamic URI patterns with parameter extraction
+- [`server_composition_example.nim`](examples/server_composition_example.nim) - Server mounting and API gateway patterns
+- [`logging_example.nim`](examples/logging_example.nim) - Pluggable logging system with multiple handlers
+- [`streaming_example.nim`](examples/streaming_example.nim) - HTTP streaming with Server-Sent Events
+- [`fluent_api_example.nim`](examples/fluent_api_example.nim) - Method chaining and fluent UFCS API
+- [`enhanced_calculator.nim`](examples/enhanced_calculator.nim) - Comprehensive example showcasing all features
 
-See the [examples README](examples/README.md) for detailed explanations of the differences between examples.
+See the [examples README](examples/README.md) for detailed explanations and architecture comparisons.
 
 Just from command line you can test and list tools with for example:
 ```bash
