@@ -269,32 +269,6 @@ proc registerMiddleware*(server: McpServer, middleware: McpMiddleware) =
   # Sort by priority (lower numbers first)
   server.middleware.sort(proc(a, b: McpMiddleware): int = cmp(a.priority, b.priority))
 
-# Server configuration methods
-proc setRequestTimeout*(server: McpServer, timeoutMs: int) =
-  ## Set request timeout in milliseconds
-  server.requestTimeout = timeoutMs
-
-proc enableContextLogging*(server: McpServer, enable: bool = true) =
-  ## Enable or disable context logging
-  server.enableContextLogging = enable
-
-proc getRequestTimeout*(server: McpServer): int =
-  ## Get current request timeout
-  server.requestTimeout
-
-proc isContextLoggingEnabled*(server: McpServer): bool =
-  ## Check if context logging is enabled
-  server.enableContextLogging
-
-# Logging configuration methods
-proc setLogger*(server: McpServer, logger: Logger) =
-  ## Set a custom logger for the server
-  server.logger = logger
-
-proc getLogger*(server: McpServer): Logger =
-  ## Get the server's logger
-  server.logger
-
 proc setLogLevel*(server: McpServer, level: LogLevel) =
   ## Set the minimum log level for the server
   server.logger.setMinLevel(level)
@@ -758,13 +732,6 @@ proc newComposedServer*(name: string, version: string, numThreads: int = 0): Com
     pathMappings: initTable[string, MountPoint]()
   )
 
-proc getMainServer*(composed: ComposedServer): McpServer =
-  ## Get the main server from a composed server
-  composed.mainServer  # Direct ref access instead of unsafe pointer cast
-
-proc getMountedServer*(mountPoint: MountPoint): McpServer =
-  ## Get the server from a mount point
-  mountPoint.server  # Direct ref access instead of unsafe pointer cast
 
 proc mountServer*(composed: ComposedServer, mountPoint: MountPoint) =
   ## Mount a server at the specified mount point
@@ -805,7 +772,7 @@ proc findMountPointForTool*(composed: ComposedServer, toolName: string): Option[
         return
     else:
       # Check if the mounted server has this tool
-      let server = getMountedServer(mountPoint)
+      let server = mountPoint.server
       let tools = server.getRegisteredToolNames()
       if toolName in tools:
         result = some(mountPoint)
@@ -823,7 +790,7 @@ proc findMountPointForResource*(composed: ComposedServer, uri: string): Option[M
         return
     else:
       # Check if the mounted server has this resource
-      let server = getMountedServer(mountPoint)
+      let server = mountPoint.server
       let resources = server.getRegisteredResourceUris()
       if uri in resources:
         result = some(mountPoint)
@@ -840,7 +807,7 @@ proc findMountPointForPrompt*(composed: ComposedServer, promptName: string): Opt
         return some(mountPoint)
     else:
       # Check if the mounted server has this prompt
-      let server = getMountedServer(mountPoint)
+      let server = mountPoint.server
       let prompts = server.getRegisteredPromptNames()
       if promptName in prompts:
         return some(mountPoint)
@@ -870,7 +837,7 @@ proc getMountedServerInfo*(composed: ComposedServer): Table[string, JsonNode] =
   result = initTable[string, JsonNode]()
   
   for mountPoint in composed.mountPoints:
-    let server = getMountedServer(mountPoint)
+    let server = mountPoint.server
     var info = newJObject()
     info["path"] = %mountPoint.path
     info["serverName"] = %server.serverInfo.name
