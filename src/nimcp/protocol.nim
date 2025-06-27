@@ -12,18 +12,44 @@ proc createJsonRpcResponse*(id: JsonRpcId, resultData: JsonNode): JsonRpcRespons
     # Don't set error field for successful responses
   )
 
-proc createJsonRpcError*(id: JsonRpcId, code: int, message: string): JsonRpcResponse =
+proc createJsonRpcError*(id: JsonRpcId, code: int, message: string, data: Option[JsonNode] = none(JsonNode)): JsonRpcResponse =
+  ## Create JSON-RPC error response with optional data
   let error = JsonRpcError(
     code: code,
     message: message,
-    data: none(JsonNode)
+    data: data
   )
   JsonRpcResponse(
-    jsonrpc: "2.0", 
+    jsonrpc: "2.0",
     id: id,
     error: some(error)
     # Don't set result field for error responses
   )
+
+# Consolidated error response utilities
+proc createParseError*(id: JsonRpcId = JsonRpcId(kind: jridString, str: ""), details: string = ""): JsonRpcResponse =
+  ## Create standardized parse error response
+  let message = if details.len > 0: "Parse error: " & details else: "Parse error"
+  createJsonRpcError(id, ParseError, message)
+
+proc createInvalidRequest*(id: JsonRpcId = JsonRpcId(kind: jridString, str: ""), details: string = ""): JsonRpcResponse =
+  ## Create standardized invalid request error response
+  let message = if details.len > 0: "Invalid request: " & details else: "Invalid request"
+  createJsonRpcError(id, InvalidRequest, message)
+
+proc createMethodNotFound*(id: JsonRpcId, methodName: string): JsonRpcResponse =
+  ## Create standardized method not found error response
+  createJsonRpcError(id, MethodNotFound, "Method not found: " & methodName)
+
+proc createInvalidParams*(id: JsonRpcId, details: string = ""): JsonRpcResponse =
+  ## Create standardized invalid params error response
+  let message = if details.len > 0: "Invalid params: " & details else: "Invalid params"
+  createJsonRpcError(id, InvalidParams, message)
+
+proc createInternalError*(id: JsonRpcId, details: string = ""): JsonRpcResponse =
+  ## Create standardized internal error response
+  let message = if details.len > 0: "Internal error: " & details else: "Internal error"
+  createJsonRpcError(id, InternalError, message)
 
 proc createJsonRpcNotification*(methodName: string): JsonRpcNotification =
   JsonRpcNotification(

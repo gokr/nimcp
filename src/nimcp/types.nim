@@ -421,44 +421,79 @@ proc toJsonNode*(schema: JsonSchemaRef): JsonNode {.gcsafe.} =
 proc `%`*(schema: JsonSchemaRef): JsonNode {.gcsafe.} =
   toJsonNode(schema)
 
+# Consolidated JSON utilities for content serialization
+proc contentToJsonNode*(content: McpContent): JsonNode {.gcsafe.} =
+  ## Convert McpContent to JsonNode - centralized content serialization
+  result = %*{
+    "type": content.`type`
+  }
+  case content.kind:
+  of TextContent:
+    result["text"] = %content.text
+  of ImageContent:
+    result["data"] = %content.data
+    result["mimeType"] = %content.mimeType
+  of ResourceContent:
+    # Skip resource content for now
+    discard
+
+proc contentsToJsonArray*(contents: seq[McpContent]): JsonNode {.gcsafe.} =
+  ## Convert sequence of McpContent to JsonNode array
+  result = newJArray()
+  for content in contents:
+    result.add(contentToJsonNode(content))
+
+# Consolidated JSON field access utilities
+proc getStringField*(node: JsonNode, field: string, default: string = ""): string {.gcsafe.} =
+  ## Safely get string field with default value
+  if node.hasKey(field) and node[field].kind == JString:
+    node[field].getStr()
+  else:
+    default
+
+proc getIntField*(node: JsonNode, field: string, default: int = 0): int {.gcsafe.} =
+  ## Safely get int field with default value
+  if node.hasKey(field) and node[field].kind == JInt:
+    node[field].getInt()
+  else:
+    default
+
+proc getFloatField*(node: JsonNode, field: string, default: float = 0.0): float {.gcsafe.} =
+  ## Safely get float field with default value
+  if node.hasKey(field) and node[field].kind in {JInt, JFloat}:
+    node[field].getFloat()
+  else:
+    default
+
+proc getBoolField*(node: JsonNode, field: string, default: bool = false): bool {.gcsafe.} =
+  ## Safely get bool field with default value
+  if node.hasKey(field) and node[field].kind == JBool:
+    node[field].getBool()
+  else:
+    default
+
+proc requireStringField*(node: JsonNode, field: string): string {.gcsafe.} =
+  ## Get required string field, throw exception if missing
+  if not node.hasKey(field):
+    raise newException(ValueError, "Missing required field: " & field)
+  if node[field].kind != JString:
+    raise newException(ValueError, "Field '" & field & "' must be a string")
+  node[field].getStr()
+
 # Custom JSON serialization for McpToolResult
 proc `%`*(toolResult: McpToolResult): JsonNode {.gcsafe.} =
-  result = newJObject()
-  result["content"] = newJArray()
-  for content in toolResult.content:
-    var contentJson = newJObject()
-    contentJson["type"] = newJString(content.`type`)
-    case content.kind:
-    of TextContent:
-      contentJson["text"] = newJString(content.text)
-    of ImageContent:
-      contentJson["data"] = newJString(content.data)
-      contentJson["mimeType"] = newJString(content.mimeType)
-    of ResourceContent:
-      # Skip resource content for now
-      discard
-    result["content"].add(contentJson)
+  %*{
+    "content": contentsToJsonArray(toolResult.content)
+  }
 
 # Custom JSON serialization for McpResourceContents
 proc `%`*(resource: McpResourceContents): JsonNode {.gcsafe.} =
-  result = newJObject()
-  result["uri"] = newJString(resource.uri)
+  result = %*{
+    "uri": resource.uri,
+    "content": contentsToJsonArray(resource.content)
+  }
   if resource.mimeType.isSome:
-    result["mimeType"] = newJString(resource.mimeType.get)
-  result["content"] = newJArray()
-  for content in resource.content:
-    var contentJson = newJObject()
-    contentJson["type"] = newJString(content.`type`)
-    case content.kind:
-    of TextContent:
-      contentJson["text"] = newJString(content.text)
-    of ImageContent:
-      contentJson["data"] = newJString(content.data)
-      contentJson["mimeType"] = newJString(content.mimeType)
-    of ResourceContent:
-      # Skip resource content for now
-      discard
-    result["content"].add(contentJson)
+    result["mimeType"] = %resource.mimeType.get
 
 proc fromJsonNode*(node: JsonNode): JsonSchemaRef =
   ## Convert JsonNode to JsonSchema for type safety
