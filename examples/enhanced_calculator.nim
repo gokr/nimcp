@@ -1,4 +1,4 @@
-## Enhanced calculator example demonstrating Phase 1 improvements
+## Enhanced calculator example demonstrating:
 ## - Context-aware tools with progress tracking
 ## - Structured error handling
 ## - Advanced type support
@@ -63,7 +63,7 @@ mcpServer("enhanced-calculator", "1.0.0"):
       let result = a / b
       return "Division result: " & $result
   
-  # Tool with advanced type support (using optional and array types)
+  # Tool with array/sequence type support
   mcpTool:
     proc calculateStats(numbers: seq[float]): string =
       ## Calculate statistics for a list of numbers
