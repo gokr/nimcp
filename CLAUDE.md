@@ -14,15 +14,16 @@ nimble test           # Run all tests (basic, simple_server, calculator_server)
 nim c -r tests/test_basic.nim           # Run basic MCP server tests
 nim c -r tests/test_simple_server.nim   # Run simple_server functionality tests  
 nim c -r tests/test_calculator_server.nim # Run calculator server tests
+nim c -r tests/test_sse_transport.nim   # Run SSE transport tests
 ```
 
 ### Building Examples
 ```bash
 nim c examples/simple_server.nim      # Compile simple server example
 nim c examples/calculator_server.nim  # Compile calculator example
-nim c examples/simple_http_calculator.nim # Compile simple HTTP calculator
+nim c examples/sse_calculator.nim       # Compile SSE calculator example
 nim c -r examples/simple_server.nim   # Compile and run simple server
-nim c -r examples/simple_http_calculator.nim # Compile and run HTTP server
+nim c -r examples/sse_calculator.nim  # Compile and run SSE server
 ```
 
 ### Documentation
@@ -46,6 +47,7 @@ nimble build         # Build the package
 - `src/nimcp/mcpmacros.nim` - High-level macro API for easy server creation
 - `src/nimcp/mummy_transport.nim` - HTTP transport implementation
 - `src/nimcp/websocket_transport.nim` - WebSocket transport implementation
+- `src/nimcp/sse_transport.nim` - SSE (Server-Sent Events) transport implementation
 
 ### Two API Styles
 
@@ -91,6 +93,13 @@ MCP servers communicate via JSON-RPC 2.0 over multiple transport options:
 - Ideal for interactive applications
 - Supports Bearer token authentication during handshake
 
+**SSE Transport** (deprecated but supported):
+- Server-to-client: Server-Sent Events stream
+- Client-to-server: HTTP POST requests
+- CORS support for web clients
+- Bearer token authentication support
+- Backwards compatibility with older MCP clients
+
 The server handles:
 - Tool calls with JSON schema validation
 - Resource access by URI
@@ -101,6 +110,7 @@ The server handles:
 - stdio: `examples/calculator_server.nim`
 - HTTP: `examples/macro_mummy_calculator.nim` 
 - WebSocket: `examples/websocket_calculator.nim`
+- SSE: `examples/sse_calculator.nim`
 
 ## Dependencies
 - You find all dependencies in `nimcp.nimble`
@@ -112,6 +122,8 @@ The server handles:
 - `examples/macro_mummy_calculator.nim` - HTTP-based calculator using macro API
 - `examples/websocket_calculator.nim` - WebSocket calculator with real-time communication (macro API)
 - `examples/authenticated_websocket_calculator.nim` - WebSocket calculator with Bearer token authentication
+- `examples/sse_calculator_manual.nim` - SSE calculator with Server-Sent Events transport (manual API)
+- `examples/sse_notifications_demo.nim` - Demonstrates SSE's key advantage: server-initiated events and real-time notifications
 
 ## Macro API Features
 The macro API automatically extracts:

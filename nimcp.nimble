@@ -7,7 +7,7 @@ srcDir        = "src"
 
 # Dependencies
 requires "nim >= 2.2.4"
-requires "mummy"
+requires "https://github.com/gokr/mummy"
 requires "taskpools"
 
 # Tasks
@@ -21,6 +21,7 @@ task test, "Run all tests":
   exec "nim c -r tests/test_calculator_server.nim"
   exec "nim c -r tests/test_concurrent_stdio.nim"
   exec "nim c -r tests/test_http_auth.nim"
+  exec "nim c -r tests/test_sse_transport.nim"
   exec "nim c -r tests/test_error_handling.nim"
   exec "nim c -r tests/test_protocol_compliance.nim"
   exec "nim c -r tests/test_edge_cases.nim"
