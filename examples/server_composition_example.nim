@@ -1,7 +1,7 @@
 ## Example demonstrating Server Composition and Mounting in NimCP
 ## Shows how to compose multiple MCP servers together
 
-import ../src/nimcp, json, options
+import ../src/nimcp, json, options, tables, sequtils
 
 # Calculator service
 proc addTool(args: JsonNode): McpToolResult =
@@ -152,7 +152,7 @@ when isMainModule:
   # Show mount point information
   echo "Mount points information:"
   let mountInfo = composedServer.getMountedServerInfo()
-  for path in mountInfo.keys:
+  for path, info in mountInfo.pairs:
     echo "  " & path & ":"
     echo "    Server: " & info["serverName"].getStr() & " v" & info["serverVersion"].getStr()
     echo "    Tools: " & $info["toolCount"].getInt()

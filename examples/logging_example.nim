@@ -11,16 +11,16 @@ proc exampleTool(ctx: McpRequestContext, args: JsonNode): McpToolResult =
   ctx.logMessage("info", "Processing input: " & input)
   
   # Simulate some work with progress updates
-  ctx.updateProgress("Starting processing...", 0.0)
+  ctx.reportProgress("Starting processing...", 0.0)
   
   # Simulate error for demonstration
   if input == "error":
     ctx.logMessage("error", "Simulated error occurred for input: " & input)
     raise newException(ValueError, "Simulated error for input: " & input)
   
-  ctx.updateProgress("Halfway done...", 0.5)
-  ctx.updateProgress("Almost finished...", 0.9)
-  ctx.updateProgress("Complete!", 1.0)
+  ctx.reportProgress("Halfway done...", 0.5)
+  ctx.reportProgress("Almost finished...", 0.9)
+  ctx.reportProgress("Complete!", 1.0)
   
   ctx.logMessage("info", "Processing completed successfully")
   
@@ -62,8 +62,7 @@ when isMainModule:
   
   # Demonstrate different log levels
   echo "4. Testing different log levels:"
-  let logger = server.getLogger()
-  
+  let logger = server.logger 
   logger.trace("This is a trace message", 
     context = {"component": %"example"}.toTable)
   logger.debug("This is a debug message",
@@ -82,7 +81,7 @@ when isMainModule:
   # Simulate tool execution with logging
   echo "6. Simulating tool execution:"
   try:
-    let args = %{"input": "test_input"}
+    let args = %*{"input": "test_input"}
     let result = exampleTool(ctx, args)
     echo "✓ Tool executed successfully"
   except Exception as e:
@@ -93,7 +92,7 @@ when isMainModule:
   # Test error logging
   echo "7. Testing error logging:"
   try:
-    let errorArgs = %{"input": "error"}
+    let errorArgs = %*{"input": "error"}
     discard exampleTool(ctx, errorArgs)
   except Exception as e:
     logger.error("Tool execution failed", 
@@ -126,9 +125,10 @@ when isMainModule:
   
   # Create a streaming logger that could be used with streaming transport
   echo "10. Custom streaming log handler:"
-  var logMessages: seq[LogMessage] = @[]
+  var logMessages {.threadvar.}: seq[LogMessage]
+  logMessages = @[]
   
-  proc streamingLogHandler(msg: LogMessage) =
+  proc streamingLogHandler(msg: LogMessage) {.gcsafe.} =
     logMessages.add(msg)
     echo "📡 STREAM: [" & $msg.level & "] " & msg.message
   
