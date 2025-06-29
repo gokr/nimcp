@@ -1,7 +1,7 @@
 ## Powerful macros for easy MCP server creation
 
 import macros, json, tables, options, strutils, typetraits, sequtils, times
-import types, server, protocol, mummy_transport, websocket_transport
+import types, server, protocol
 
 # Enhanced helper to convert Nim types to JSON schema types with support for more types
 proc nimTypeToJsonSchema(nimType: NimNode): JsonNode =
@@ -108,32 +108,32 @@ proc generateArgumentExtraction(params: NimNode, procName: NimNode): NimNode =
       let paramType = param[^2]  # Type is second to last
       for j in 0..<param.len-2:  # All names except type and default value
         let paramName = param[j]
-        let paramNameStr = $paramName
+        let paramNameStr = newLit($paramName)
         
         # Generate type-safe extraction based on parameter type
         let extraction = case $paramType:
           of "int", "int8", "int16", "int32", "int64":
-            quote do:
+            quote:
               let `paramName` = args[`paramNameStr`].getInt()
           of "uint", "uint8", "uint16", "uint32", "uint64":
-            quote do:
+            quote:
               let `paramName` = args[`paramNameStr`].getInt().uint
           of "float", "float32", "float64":
-            quote do:
+            quote:
               let `paramName` = args[`paramNameStr`].getFloat()
           of "string":
-            quote do:
+            quote:
               let `paramName` = args[`paramNameStr`].getStr()
           of "bool":
-            quote do:
+            quote:
               let `paramName` = args[`paramNameStr`].getBool()
           else:
             # Handle seq types and complex types
             if paramType.kind == nnkBracketExpr and $paramType[0] == "seq":
-              quote do:
+              quote:
                 let `paramName` = args[`paramNameStr`].getElems().mapIt(it.getStr())
             else:
-              quote do:
+              quote:
                 let `paramName` = $args[`paramNameStr`]
         
         result.add(extraction)

@@ -1,7 +1,7 @@
 ## Authenticated HTTP calculator server example using Bearer token authentication
 ## This example demonstrates how to add token-based authentication to an MCP HTTP server
 
-import ../src/nimcp, json, options, strformat
+import ../src/nimcp, ../src/nimcp/auth, json, options, strformat
 
 # Example token validator - in production, this would validate against a real auth system
 proc validateToken(token: string): bool =
