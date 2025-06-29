@@ -6,10 +6,7 @@
 
 import mummy, mummy/routers, mummy/common, json, strutils, strformat, options, tables, locks, random
 import server, types, protocol
-
-# Import AuthConfig from mummy_transport for consistency
-from mummy_transport import AuthConfig, newAuthConfig
-
+import auth, connection_pool
 type
   MummySseConnection* = ref object
     ## Wrapper for mummy SSEConnection with additional MCP state
@@ -25,8 +22,7 @@ type
     port*: int
     host*: string
     authConfig*: AuthConfig
-    connections: Table[string, MummySseConnection]
-    connectionsLock: Lock
+    connectionPool: ConnectionPool[MummySseConnection]
     sseEndpoint*: string
     messageEndpoint*: string
 
@@ -41,11 +37,10 @@ proc newSseTransport*(server: McpServer, port: int = 8080, host: string = "127.0
     port: port,
     host: host,
     authConfig: authConfig,
-    connections: initTable[string, MummySseConnection](),
+    connectionPool: newConnectionPool[MummySseConnection](),
     sseEndpoint: sseEndpoint,
     messageEndpoint: messageEndpoint
   )
-  initLock(transport.connectionsLock)
   return transport
 
 proc generateConnectionId(): string =
@@ -53,30 +48,11 @@ proc generateConnectionId(): string =
   return $rand(int.high)
 
 proc validateSseAuth(transport: SseTransport, request: Request): tuple[valid: bool, errorMsg: string] =
-  ## Validate SSE authentication during connection establishment
-  if not transport.authConfig.enabled:
-    return (true, "")
-    
-  if transport.authConfig.requireHttps:
-    # Check if request is HTTPS by checking standard headers
-    let proto = if "X-Forwarded-Proto" in request.headers: request.headers["X-Forwarded-Proto"] else: "http"
-    if not proto.startsWith("https"):
-      return (false, "HTTPS required for authentication")
-    
-  # Check Authorization header for Bearer token
-  if not ("Authorization" in request.headers):
-    return (false, "Missing Authorization header")
-    
-  let authHeader = request.headers["Authorization"]
-  if not authHeader.startsWith("Bearer "):
-    return (false, "Invalid Authorization header format")
-    
-  let token = authHeader[7..^1].strip() # Remove "Bearer " prefix
-  if transport.authConfig.validator == nil or not transport.authConfig.validator(token):
-    return (false, "Invalid authentication token")
-    
+  ## Validate SSE authentication using shared auth module
+  let (valid, errorCode, errorMsg) = validateRequest(transport.authConfig, request)
+  if not valid:
+    return (false, errorMsg)
   return (true, "")
-
 proc sendSseEvent(connection: MummySseConnection, event: string, data: string, id: string = "") =
   ## Send an SSE event to a connection
   let sseEvent = SSEEvent(
@@ -96,34 +72,10 @@ proc sendSseMessage(connection: MummySseConnection, jsonMessage: JsonNode, id: s
   ## Send a JSON-RPC message via SSE
   sendSseEvent(connection, "message", $jsonMessage, id)
 
-proc addConnection(transport: SseTransport, connection: MummySseConnection) =
-  ## Thread-safe addition of SSE connection
-  withLock transport.connectionsLock:
-    transport.connections[connection.id] = connection
-
-proc removeConnection(transport: SseTransport, connectionId: string) =
-  ## Thread-safe removal of SSE connection
-  withLock transport.connectionsLock:
-    if connectionId in transport.connections:
-      try:
-        var conn = transport.connections[connectionId]
-        conn.connection.close()
-      except:
-        discard
-      transport.connections.del(connectionId)
-
-proc getConnection(transport: SseTransport, connectionId: string): Option[MummySseConnection] =
-  ## Thread-safe retrieval of SSE connection
-  withLock transport.connectionsLock:
-    if connectionId in transport.connections:
-      return some(transport.connections[connectionId])
-    return none(MummySseConnection)
-
 proc broadcastMessage(transport: SseTransport, jsonMessage: JsonNode) =
   ## Broadcast a message to all connected SSE clients
-  withLock transport.connectionsLock:
-    for connection in transport.connections.values:
-      sendSseMessage(connection, jsonMessage)
+  for connection in transport.connectionPool.getAllConnections():
+    sendSseMessage(connection, jsonMessage)
 
 proc setupRoutes(transport: SseTransport) =
   ## Setup SSE and message handling routes
@@ -144,16 +96,13 @@ proc setupRoutes(transport: SseTransport) =
     try:
       let sseConnection = request.respondSSE()
       
-      # Create our wrapper connection
-      let connectionId = generateConnectionId()
+      # Create and add connection to pool
       let connection = MummySseConnection(
         connection: sseConnection,
-        id: connectionId,
+        id: generateConnectionId(),
         authenticated: transport.authConfig.enabled
       )
-      
-      # Add to connections
-      addConnection(transport, connection)
+      transport.connectionPool.addConnection(connection.id, connection)
       
       # Send initial endpoint event with message endpoint URL
       let endpointEvent = %*{
@@ -262,18 +211,16 @@ proc stop*(transport: SseTransport) =
   ## Stop the SSE transport server
   if transport.httpServer != nil:
     # Close all SSE connections
-    withLock transport.connectionsLock:
-      for connection in transport.connections.values:
-        try:
-          sendSseEvent(connection, "close", "Server shutting down")
-        except:
-          discard
-      transport.connections.clear()
+    for connection in transport.connectionPool.connections():
+      try:
+        sendSseEvent(connection, "close", "Server shutting down")
+      except:
+        discard
+    transport.connectionPool = newConnectionPool[MummySseConnection]()
     
     transport.httpServer.close()
     echo "SSE transport server stopped"
 
 proc getActiveConnectionCount*(transport: SseTransport): int =
   ## Get the number of active SSE connections
-  withLock transport.connectionsLock:
-    return transport.connections.len
+  transport.connectionPool.connectionCount()

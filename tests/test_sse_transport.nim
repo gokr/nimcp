@@ -3,6 +3,7 @@
 
 import unittest, json, options, tables, httpclient, os, strformat, strutils, times
 import ../src/nimcp
+import ../src/nimcp/auth  # Import shared authentication module
 
 suite "SSE Transport Tests":
   
@@ -22,7 +23,7 @@ suite "SSE Transport Tests":
     proc testValidator(token: string): bool =
       return token == "valid-token"
     
-    let authConfig = newAuthConfig(testValidator, requireHttps = false)
+    let authConfig = auth.newAuthConfig(testValidator, requireHttps = false)
     let customTransport = newSseTransport(
       server, 
       port = 9090, 
@@ -54,7 +55,7 @@ suite "SSE Transport Tests":
     proc testValidator(token: string): bool =
       return token in ["token1", "token2", "valid-token"]
     
-    let authConfig = newAuthConfig(testValidator, requireHttps = false)
+    let authConfig = auth.newAuthConfig(testValidator, requireHttps = false)
     let transport = newSseTransport(server, port = 8082, authConfig = authConfig)
     
     # Authentication is tested through the actual server endpoints

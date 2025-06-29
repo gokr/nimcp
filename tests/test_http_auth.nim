@@ -3,6 +3,7 @@
 
 import unittest, json, options, tables, httpclient, os, strformat
 import ../src/nimcp
+import ../src/nimcp/auth  # Import shared authentication module
 
 suite "HTTP Authentication Tests":
   
@@ -120,9 +121,9 @@ suite "HTTP Authentication Tests":
     let authConfig = newAuthConfig(testValidator, requireHttps = false)
     
     # Start server in a separate thread
-    var serverThread: Thread[tuple[server: McpServer, port: int, host: string, auth: AuthConfig]]
+    var serverThread: Thread[tuple[server: McpServer, port: int, host: string, auth: auth.AuthConfig]]
     
-    proc runServer(params: tuple[server: McpServer, port: int, host: string, auth: AuthConfig]) {.thread.} =
+    proc runServer(params: tuple[server: McpServer, port: int, host: string, auth: auth.AuthConfig]) {.thread.} =
       try:
         params.server.runHttp(params.port, params.host, params.auth)
       except CatchableError:

@@ -3,16 +3,9 @@
 
 import mummy, mummy/routers, json, strutils, strformat, options, tables
 import server, types, protocol
+import auth, cors  # Import shared modules
 
 type
-  TokenValidator* = proc(token: string): bool {.gcsafe.}
-  
-  AuthConfig* = object
-    enabled*: bool
-    validator*: TokenValidator
-    requireHttps*: bool
-    customErrorResponses*: Table[int, string]
-  
   MummyTransport* = ref object
     server: McpServer
     router: Router
@@ -20,24 +13,6 @@ type
     port: int
     host: string
     authConfig*: AuthConfig
-
-proc newAuthConfig*(): AuthConfig =
-  ## Create a default authentication configuration (disabled)
-  AuthConfig(
-    enabled: false,
-    validator: nil,
-    requireHttps: false,
-    customErrorResponses: initTable[int, string]()
-  )
-
-proc newAuthConfig*(validator: TokenValidator, requireHttps: bool = false): AuthConfig =
-  ## Create an enabled authentication configuration with custom validator
-  AuthConfig(
-    enabled: true,
-    validator: validator,
-    requireHttps: requireHttps,
-    customErrorResponses: initTable[int, string]()
-  )
 
 proc newMummyTransport*(server: McpServer, port: int = 8080, host: string = "127.0.0.1", authConfig: AuthConfig = newAuthConfig()): MummyTransport =
   MummyTransport(
@@ -47,52 +22,11 @@ proc newMummyTransport*(server: McpServer, port: int = 8080, host: string = "127
     host: host,
     authConfig: authConfig
   )
-
-proc extractBearerToken(request: Request): Option[string] =
-  ## Extract Bearer token from Authorization header
-  if "Authorization" in request.headers:
-    let authHeader = request.headers["Authorization"]
-    if authHeader.startsWith("Bearer "):
-      return some(authHeader[7..^1].strip())
-  return none(string)
-
 proc validateAuthentication(transport: MummyTransport, request: Request): tuple[valid: bool, errorCode: int, errorMsg: string] =
-  ## Validate authentication according to MCP specification
-  if not transport.authConfig.enabled:
-    return (true, 0, "")
-  
-  # Check HTTPS requirement
-  if transport.authConfig.requireHttps:
-    let proto = if "X-Forwarded-Proto" in request.headers: request.headers["X-Forwarded-Proto"] else: "http"
-    if not proto.startsWith("https"):
-      return (false, 400, "HTTPS required for authentication")
-  
-  # Extract Bearer token
-  let tokenOpt = extractBearerToken(request)
-  if tokenOpt.isNone:
-    return (false, 401, "Authorization required: Bearer token missing")
-  
-  let token = tokenOpt.get()
-  if token.len == 0:
-    return (false, 400, "Malformed authorization: empty token")
-  
-  # Validate token using configured validator
-  if transport.authConfig.validator == nil:
-    return (false, 500, "Internal error: no token validator configured")
-  
-  try:
-    if not transport.authConfig.validator(token):
-      return (false, 401, "Authorization required: token invalid")
-  except:
-    return (false, 500, "Internal error: token validation failed")
-  
-  return (true, 0, "")
-
+  ## Validate authentication using shared auth module
+  validateRequest(transport.authConfig, request)
 proc handleMcpRequest(transport: MummyTransport, request: Request) {.gcsafe.} =
-  var headers: HttpHeaders
-  headers["Access-Control-Allow-Origin"] = "*"
-  headers["Access-Control-Allow-Methods"] = "POST, GET, OPTIONS"
-  headers["Access-Control-Allow-Headers"] = "Content-Type, Accept, Origin, Authorization"
+  var headers = corsHeadersFor("POST, GET, OPTIONS")
   headers["Content-Type"] = "application/json"
   
   # Authentication validation (skip for OPTIONS requests)

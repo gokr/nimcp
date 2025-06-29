@@ -3,10 +3,7 @@
 
 import mummy, mummy/routers, json, strutils, strformat, options, tables, locks
 import server, types, protocol
-
-# Import AuthConfig from mummy_transport
-from mummy_transport import AuthConfig, newAuthConfig
-
+import auth, connection_pool, cors
 type
   WebSocketConnection* = ref object
     ## Represents an active WebSocket connection
@@ -22,8 +19,7 @@ type
     port*: int
     host*: string
     authConfig*: AuthConfig
-    connections: Table[string, WebSocketConnection]
-    connectionsLock: Lock
+    connectionPool: ConnectionPool[WebSocketConnection]
 
 # Reuse authentication types from mummy_transport
 proc newWebSocketTransport*(server: McpServer, port: int = 8080, host: string = "127.0.0.1", authConfig: AuthConfig = newAuthConfig()): WebSocketTransport =
@@ -34,9 +30,8 @@ proc newWebSocketTransport*(server: McpServer, port: int = 8080, host: string = 
     port: port,
     host: host,
     authConfig: authConfig,
-    connections: initTable[string, WebSocketConnection]()
+    connectionPool: newConnectionPool[WebSocketConnection]()
   )
-  initLock(transport.connectionsLock)
   return transport
 
 import random
@@ -45,49 +40,6 @@ proc generateConnectionId(): string =
   ## Generate a unique connection ID
   return $rand(int.high)
 
-proc validateWebSocketAuth(transport: WebSocketTransport, request: Request): tuple[valid: bool, errorMsg: string] =
-  ## Validate WebSocket authentication during handshake
-  if not transport.authConfig.enabled:
-    return (true, "")
-  
-  # Check for Authorization header in WebSocket handshake
-  if "Authorization" notin request.headers:
-    return (false, "Authorization required: Bearer token missing")
-  
-  let authHeader = request.headers["Authorization"]
-  if not authHeader.startsWith("Bearer "):
-    return (false, "Authorization required: Bearer token format invalid")
-  
-  let token = authHeader[7..^1].strip()
-  if token.len == 0:
-    return (false, "Authorization required: empty token")
-  
-  # Validate token using configured validator
-  if transport.authConfig.validator == nil:
-    return (false, "Internal error: no token validator configured")
-  
-  try:
-    if not transport.authConfig.validator(token):
-      return (false, "Authorization required: token invalid")
-  except:
-    return (false, "Internal error: token validation failed")
-  
-  return (true, "")
-
-proc addConnection(transport: WebSocketTransport, connection: WebSocketConnection) =
-  ## Thread-safe connection addition
-  withLock transport.connectionsLock:
-    transport.connections[connection.id] = connection
-
-proc removeConnection(transport: WebSocketTransport, connectionId: string) {.used.} =
-  ## Thread-safe connection removal
-  withLock transport.connectionsLock:
-    transport.connections.del(connectionId)
-
-proc getConnection(transport: WebSocketTransport, connectionId: string): WebSocketConnection {.used.} =
-  ## Thread-safe connection retrieval
-  withLock transport.connectionsLock:
-    return transport.connections.getOrDefault(connectionId, nil)
 
 proc handleJsonRpcMessage(transport: WebSocketTransport, websocket: WebSocket, message: string) {.gcsafe.} =
   ## Handle incoming WebSocket JSON-RPC message
@@ -131,14 +83,13 @@ proc websocketEventHandler(transport: WebSocketTransport, websocket: WebSocket, 
   ## Handle WebSocket events according to Mummy's API
   case event:
   of OpenEvent:
-    let connectionId = generateConnectionId()
     let connection = WebSocketConnection(
       websocket: websocket,
-      id: connectionId,
+      id: generateConnectionId(),
       authenticated: true  # Authentication handled during handshake
     )
-    transport.addConnection(connection)
-    echo fmt"WebSocket connection opened: {connectionId}"
+    transport.connectionPool.addConnection(connection.id, connection)
+    echo fmt"WebSocket connection opened: {connection.id}"
     
   of MessageEvent:
     # Handle JSON-RPC message
@@ -147,30 +98,28 @@ proc websocketEventHandler(transport: WebSocketTransport, websocket: WebSocket, 
     
   of CloseEvent:
     # Find and remove connection
-    withLock transport.connectionsLock:
-      for id, conn in transport.connections.pairs:
-        if conn.websocket == websocket:
-          echo fmt"WebSocket connection closed: {id}"
-          transport.connections.del(id)
-          break
+    for connection in transport.connectionPool.connections():
+      if connection.websocket == websocket:
+        echo fmt"WebSocket connection closed: {connection.id}"
+        transport.connectionPool.removeConnection(connection.id)
+        break
     
   of ErrorEvent:
     # Find and remove connection on error
-    withLock transport.connectionsLock:
-      for id, conn in transport.connections.pairs:
-        if conn.websocket == websocket:
-          echo fmt"WebSocket error on connection {id}"
-          transport.connections.del(id)
-          break
+    for connection in transport.connectionPool.connections():
+      if connection.websocket == websocket:
+        echo fmt"WebSocket error on connection {connection.id}"
+        transport.connectionPool.removeConnection(connection.id)
+        break
 proc upgradeHandler(transport: WebSocketTransport, request: Request) {.gcsafe.} =
   ## Handle WebSocket upgrade requests
   
-  # Validate authentication during handshake
-  let authResult = validateWebSocketAuth(transport, request)
-  if not authResult.valid:
+  # Validate authentication using shared auth module
+  let (valid, errorCode, errorMsg) = validateRequest(transport.authConfig, request)
+  if not valid:
     var headers: HttpHeaders
     headers["Content-Type"] = "text/plain"
-    request.respond(401, headers, authResult.errorMsg)
+    request.respond(errorCode, headers, errorMsg)
     return
   
   # Upgrade to WebSocket - Mummy handles the upgrade internally
@@ -193,9 +142,8 @@ proc handleInfoRequest(transport: WebSocketTransport, request: Request) {.gcsafe
     }
   }
   
-  var headers: HttpHeaders
+  var headers = defaultCorsHeaders()
   headers["Content-Type"] = "application/json"
-  headers["Access-Control-Allow-Origin"] = "*"
   
   request.respond(200, headers, $info)
 
@@ -212,10 +160,7 @@ proc setupRoutes(transport: WebSocketTransport) =
   
   # OPTIONS for CORS
   transport.router.options("/", proc(request: Request) {.gcsafe.} =
-    var headers: HttpHeaders
-    headers["Access-Control-Allow-Origin"] = "*"
-    headers["Access-Control-Allow-Methods"] = "GET, OPTIONS"
-    headers["Access-Control-Allow-Headers"] = "Content-Type, Accept, Origin, Authorization, Upgrade, Connection"
+    let headers = corsHeadersFor("GET, OPTIONS", "Content-Type, Accept, Origin, Authorization, Upgrade, Connection")
     request.respond(204, headers, "")
   )
 
@@ -242,13 +187,12 @@ proc shutdown*(transport: WebSocketTransport) =
     transport.httpServer.close()
   
   # Close all active WebSocket connections
-  withLock transport.connectionsLock:
-    for connection in transport.connections.values:
-      try:
-        connection.websocket.close()
-      except:
-        discard  # Ignore errors during shutdown
-    transport.connections.clear()
+  for connection in transport.connectionPool.connections():
+    try:
+      connection.websocket.close()
+    except:
+      discard  # Ignore errors during shutdown
+  transport.connectionPool = newConnectionPool[WebSocketConnection]()
 
 proc runWebSocket*(server: McpServer, port: int = 8080, host: string = "127.0.0.1", authConfig: AuthConfig = newAuthConfig()) =
   ## Convenience function to run an MCP server over WebSocket
@@ -260,15 +204,13 @@ proc runWebSocket*(server: McpServer, port: int = 8080, host: string = "127.0.0.
 
 proc broadcastToAll*(transport: WebSocketTransport, message: string) =
   ## Broadcast a message to all connected WebSocket clients
-  withLock transport.connectionsLock:
-    for connection in transport.connections.values:
-      try:
-        connection.websocket.send(message)
-      except:
-        # Remove failed connections
-        discard
+  for connection in transport.connectionPool.connections():
+    try:
+      connection.websocket.send(message)
+    except:
+      # Connection failed, remove it
+      transport.connectionPool.removeConnection(connection.id)
 
 proc getActiveConnectionCount*(transport: WebSocketTransport): int =
   ## Get the number of active WebSocket connections
-  withLock transport.connectionsLock:
-    return transport.connections.len
+  transport.connectionPool.connectionCount()
