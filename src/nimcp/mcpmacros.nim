@@ -1,6 +1,6 @@
 ## Powerful macros for easy MCP server creation
 
-import macros, json, tables, options, strutils, typetraits, sequtils, times
+import macros, json, tables, options, strutils, typetraits, sequtils, times, strformat
 import types, server, protocol
 
 # Enhanced helper to convert Nim types to JSON schema types with support for more types
@@ -111,30 +111,39 @@ proc generateArgumentExtraction(params: NimNode, procName: NimNode): NimNode =
         let paramNameStr = newLit($paramName)
         
         # Generate type-safe extraction based on parameter type
+        # Create args identifier manually to avoid resolution issues
+        let argsIdent = newIdentNode("args")
         let extraction = case $paramType:
           of "int", "int8", "int16", "int32", "int64":
-            quote:
-              let `paramName` = args[`paramNameStr`].getInt()
+            newStmtList(
+              newLetStmt(paramName, newCall("getInt", newNimNode(nnkBracketExpr).add(argsIdent, paramNameStr)))
+            )
           of "uint", "uint8", "uint16", "uint32", "uint64":
-            quote:
-              let `paramName` = args[`paramNameStr`].getInt().uint
+            newStmtList(
+              newLetStmt(paramName, newCall("uint", newCall("getInt", newNimNode(nnkBracketExpr).add(argsIdent, paramNameStr))))
+            )
           of "float", "float32", "float64":
-            quote:
-              let `paramName` = args[`paramNameStr`].getFloat()
+            newStmtList(
+              newLetStmt(paramName, newCall("getFloat", newNimNode(nnkBracketExpr).add(argsIdent, paramNameStr)))
+            )
           of "string":
-            quote:
-              let `paramName` = args[`paramNameStr`].getStr()
+            newStmtList(
+              newLetStmt(paramName, newCall("getStr", newNimNode(nnkBracketExpr).add(argsIdent, paramNameStr)))
+            )
           of "bool":
-            quote:
-              let `paramName` = args[`paramNameStr`].getBool()
+            newStmtList(
+              newLetStmt(paramName, newCall("getBool", newNimNode(nnkBracketExpr).add(argsIdent, paramNameStr)))
+            )
           else:
             # Handle seq types and complex types
             if paramType.kind == nnkBracketExpr and $paramType[0] == "seq":
-              quote:
-                let `paramName` = args[`paramNameStr`].getElems().mapIt(it.getStr())
+              let getElemsCall = newCall("getElems", newNimNode(nnkBracketExpr).add(argsIdent, paramNameStr))
+              let mapItCall = newCall("mapIt", getElemsCall, newCall("getStr", newIdentNode("it")))
+              newStmtList(newLetStmt(paramName, mapItCall))
             else:
-              quote:
-                let `paramName` = $args[`paramNameStr`]
+              newStmtList(
+                newLetStmt(paramName, newCall("$", newNimNode(nnkBracketExpr).add(argsIdent, paramNameStr)))
+              )
         
         result.add(extraction)
 
