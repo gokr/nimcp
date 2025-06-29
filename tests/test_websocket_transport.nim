@@ -1,7 +1,7 @@
 ## Tests for WebSocket transport functionality
 
 import unittest, json, options, tables
-import ../src/nimcp/[types, protocol, server, websocket_transport, mummy_transport]
+import ../src/nimcp/[types, protocol, server, websocket_transport, auth]
 
 suite "WebSocket Transport Tests":
   
@@ -22,7 +22,7 @@ suite "WebSocket Transport Tests":
     proc testValidator(token: string): bool {.gcsafe.} =
       return token == "valid-token"
     
-    let authConfig = newAuthConfig(testValidator, false)
+    let authConfig = auth.newAuthConfig(testValidator, false)
     let transport = newWebSocketTransport(server, 8081, "127.0.0.1", authConfig)
     
     check transport != nil
@@ -34,20 +34,23 @@ suite "WebSocket Transport Tests":
     transport.shutdown()
   
   test "WebSocket transport configuration types":
-    let wsConfig = WebSocketTransport(8080, "127.0.0.1")
-    check wsConfig.kind == mtWebSocket
-    check wsConfig.wsPort == 8080
-    check wsConfig.wsHost == "127.0.0.1"
-    check wsConfig.wsRequireHttps == false
-    check wsConfig.wsTokenValidator == nil
+    let server = newMcpServer("config-test", "1.0.0")
+    let transport = newWebSocketTransport(server, 8080, "127.0.0.1")
+    check transport.port == 8080
+    check transport.host == "127.0.0.1"
+    check transport.authConfig.enabled == false
     
     proc testAuth(token: string): bool {.gcsafe.} = token == "test"
-    let wsAuthConfig = WebSocketTransportAuth(8081, "localhost", true, testAuth)
-    check wsAuthConfig.kind == mtWebSocket
-    check wsAuthConfig.wsPort == 8081
-    check wsAuthConfig.wsHost == "localhost"
-    check wsAuthConfig.wsRequireHttps == true
-    check wsAuthConfig.wsTokenValidator != nil
+    let authConfig = auth.newAuthConfig(testAuth, true)
+    let authTransport = newWebSocketTransport(server, 8081, "localhost", authConfig)
+    check authTransport.port == 8081
+    check authTransport.host == "localhost"
+    check authTransport.authConfig.enabled == true
+    check authTransport.authConfig.requireHttps == true
+    check authTransport.authConfig.validator != nil
+    
+    transport.shutdown()
+    authTransport.shutdown()
 
   test "WebSocket transport integration with McpServer":
     let server = newMcpServer("websocket-test", "1.0.0")
