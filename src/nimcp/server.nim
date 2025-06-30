@@ -3,7 +3,7 @@
 ## This module provides the main MCP server implementation using the modern
 ## taskpools library for better performance and energy efficiency.
 
-import json, tables, options, locks, cpuinfo, strutils, algorithm
+import json, tables, options, locks, cpuinfo, strutils, algorithm, times, random
 import taskpools
 import types, protocol, context, resource_templates, logging
 
@@ -36,6 +36,8 @@ type
     requestTimeout*: int  # milliseconds
     enableContextLogging*: bool
     logger*: Logger
+    transport*: Option[McpTransport]  # Type-safe transport storage
+    customData*: Table[string, pointer]  # Custom data storage for other use cases
 
   # Server composition types (moved from types.nim to avoid circular dependency)
   MountPoint* = object
@@ -74,6 +76,8 @@ proc newMcpServer*(name: string, version: string, numThreads: int = 0): McpServe
   result.enableContextLogging = false
   result.middleware = @[]
   result.resourceTemplates = newResourceTemplateRegistry()
+  result.transport = none(McpTransport)  # Initialize with no transport
+  result.customData = initTable[string, pointer]()
   
   # Initialize logging with server-specific component name
   result.logger = newLogger(llInfo)
@@ -90,6 +94,126 @@ proc newMcpServer*(name: string, version: string, numThreads: int = 0): McpServe
   # Log server initialization
   result.logger.info("MCP server initialized", 
     context = {"name": %name, "version": %version, "threads": %threads}.toTable)
+
+# Server-aware context creation
+proc newMcpRequestContextWithServer(server: McpServer, requestId: string = ""): McpRequestContext =
+  ## Create a new request context with server reference
+  let id = if requestId.len > 0: requestId else: $now().toTime().toUnix() & "_" & $rand(1000)
+  
+  result = McpRequestContext(
+    server: cast[pointer](server),
+    requestId: id,
+    startTime: now(),
+    cancelled: false,
+    metadata: initTable[string, JsonNode](),
+    progressCallback: nil,
+    logCallback: nil
+  )
+
+# Context helper methods
+proc getServer*(ctx: McpRequestContext): McpServer =
+  ## Get the server instance from the request context
+  if ctx.server != nil:
+    return cast[McpServer](ctx.server)
+  else:
+    return nil
+
+# Custom data storage and retrieval methods
+proc setCustomData*[T](server: McpServer, key: string, data: T) =
+  ## Store custom data in the server for access by server-aware handlers
+  server.customData[key] = cast[pointer](data)
+
+proc getCustomData*[T](server: McpServer, key: string, dataType: typedesc[T]): T =
+  ## Retrieve custom data from the server
+  if key in server.customData:
+    return cast[T](server.customData[key])
+  else:
+    return nil
+
+proc hasCustomData*(server: McpServer, key: string): bool =
+  ## Check if custom data exists for the given key
+  return key in server.customData
+
+proc removeCustomData*(server: McpServer, key: string) =
+  ## Remove custom data for the given key
+  if key in server.customData:
+    server.customData.del(key)
+
+# Type-safe transport management procedures
+# Note: Using generic pointer approach since transport types are defined in separate modules
+proc setSseTransport*(server: McpServer, transport: pointer) =
+  ## Set SSE transport (internal - use setTransport overloads instead)
+  server.transport = some(McpTransport(kind: tkSSE, sseTransport: transport))
+
+proc setWebSocketTransport*(server: McpServer, transport: pointer) =
+  ## Set WebSocket transport (internal - use setTransport overloads instead)
+  server.transport = some(McpTransport(kind: tkWebSocket, wsTransport: transport))
+
+proc setHttpTransport*(server: McpServer, transport: pointer) =
+  ## Set HTTP transport (internal - use setTransport overloads instead)
+  server.transport = some(McpTransport(kind: tkHttp, httpTransport: transport))
+
+proc getTransportKind*(server: McpServer): TransportKind =
+  ## Get the kind of currently active transport
+  if server.transport.isSome:
+    return server.transport.get().kind
+  else:
+    return tkNone
+
+proc hasTransport*(server: McpServer): bool =
+  ## Check if server has an active transport
+  return server.transport.isSome
+
+proc getSseTransportPtr*(server: McpServer): pointer =
+  ## Get SSE transport pointer if active, otherwise nil
+  if server.transport.isSome and server.transport.get().kind == tkSSE:
+    return server.transport.get().sseTransport
+  return nil
+
+proc getWebSocketTransportPtr*(server: McpServer): pointer =
+  ## Get WebSocket transport pointer if active, otherwise nil
+  if server.transport.isSome and server.transport.get().kind == tkWebSocket:
+    return server.transport.get().wsTransport
+  return nil
+
+proc getHttpTransportPtr*(server: McpServer): pointer =
+  ## Get HTTP transport pointer if active, otherwise nil
+  if server.transport.isSome and server.transport.get().kind == tkHttp:
+    return server.transport.get().httpTransport
+  return nil
+
+proc clearTransport*(server: McpServer) =
+  ## Clear the active transport
+  server.transport = none(McpTransport)
+
+proc getTransport*(server: McpServer): TransportInterface =
+  ## Get transport as polymorphic interface (requires transport to implement TransportInterface)
+  ## This enables transport-agnostic code where tools work with any transport type
+  if not server.transport.isSome:
+    return nil
+  
+  # Note: This requires each transport type to implement TransportInterface
+  # The actual transport objects must inherit from TransportInterface
+  case server.transport.get().kind:
+  of tkSSE:
+    let transportPtr = server.transport.get().sseTransport
+    if transportPtr != nil:
+      return cast[TransportInterface](transportPtr)
+  of tkWebSocket:
+    let transportPtr = server.transport.get().wsTransport
+    if transportPtr != nil:
+      return cast[TransportInterface](transportPtr)
+  of tkHttp:
+    let transportPtr = server.transport.get().httpTransport
+    if transportPtr != nil:
+      return cast[TransportInterface](transportPtr)
+  of tkNone, tkStdio:
+    discard
+  
+  return nil
+
+# Transport access helpers - examples should use specific getters instead of generic getTransport
+# This avoids circular import issues while maintaining the union type benefits
 
 proc shutdown*(server: McpServer) =
   ## Shutdown the server and clean up resources
@@ -150,6 +274,7 @@ proc registerToolWithContext*(server: McpServer, tool: McpTool, handler: McpTool
     server.contextAwareToolHandlers[tool.name] = handler
 
   server.ensureToolsCapability()
+
 
 proc registerResource*(server: McpServer, resource: McpResource, handler: McpResourceHandler) =
   ## Register a resource with its handler function.
@@ -339,7 +464,7 @@ proc handleToolsCall(server: McpServer, params: JsonNode, ctx: McpRequestContext
 
   let args = if params.hasKey("arguments"): params["arguments"] else: newJObject()
   
-  # Check for context-aware handler first
+  # Check for handlers in order of preference: context-aware, regular
   var contextHandler: McpToolHandlerWithContext
   var regularHandler: McpToolHandler
   var hasContextHandler = false
@@ -356,7 +481,7 @@ proc handleToolsCall(server: McpServer, params: JsonNode, ctx: McpRequestContext
       raise newException(ValueError, "Tool not found: " & toolName)
   
   try:
-    let requestCtx = if ctx != nil: ctx else: newMcpRequestContext()
+    let requestCtx = if ctx != nil: ctx else: newMcpRequestContextWithServer(server)
     
     if server.enableContextLogging:
       requestCtx.logMessage("info", "Executing tool: " & toolName)
@@ -404,7 +529,7 @@ proc handleResourcesRead(server: McpServer, params: JsonNode, ctx: McpRequestCon
   
   # If no direct handler found, try resource templates
   if not hasContextHandler and not hasRegularHandler:
-    let requestCtx = if ctx != nil: ctx else: newMcpRequestContext()
+    let requestCtx = if ctx != nil: ctx else: newMcpRequestContextWithServer(server)
     let templateResult = server.resourceTemplates.handleTemplateRequestWithContext(requestCtx, uri)
     if templateResult.isSome:
       # Create response manually to avoid GC safety issues
@@ -447,7 +572,7 @@ proc handleResourcesRead(server: McpServer, params: JsonNode, ctx: McpRequestCon
       raise newException(ValueError, "Resource not found: " & uri)
   
   try:
-    let requestCtx = if ctx != nil: ctx else: newMcpRequestContext()
+    let requestCtx = if ctx != nil: ctx else: newMcpRequestContextWithServer(server)
     
     if server.enableContextLogging:
       requestCtx.logMessage("info", "Accessing resource: " & uri)
@@ -499,7 +624,7 @@ proc handlePromptsGet(server: McpServer, params: JsonNode, ctx: McpRequestContex
       raise newException(ValueError, "Prompt not found: " & promptName)
   
   try:
-    let requestCtx = if ctx != nil: ctx else: newMcpRequestContext()
+    let requestCtx = if ctx != nil: ctx else: newMcpRequestContextWithServer(server)
     
     if server.enableContextLogging:
       requestCtx.logMessage("info", "Executing prompt: " & promptName)
