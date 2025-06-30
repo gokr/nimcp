@@ -14,7 +14,7 @@ type
     id*: string
     authenticated*: bool
     
-  SseTransport* = ref object
+  SseTransport* = ref object of TransportInterface
     ## SSE transport implementation for MCP servers
     server: McpServer
     router: Router
@@ -41,6 +41,8 @@ proc newSseTransport*(server: McpServer, port: int = 8080, host: string = "127.0
     sseEndpoint: sseEndpoint,
     messageEndpoint: messageEndpoint
   )
+  # Initialize transport interface capabilities
+  transport.capabilities = {tcBroadcast, tcEvents, tcUnicast}
   return transport
 
 proc generateConnectionId(): string =
@@ -53,8 +55,8 @@ proc validateSseAuth(transport: SseTransport, request: Request): tuple[valid: bo
   if not valid:
     return (false, errorMsg)
   return (true, "")
-proc sendSseEvent(connection: MummySseConnection, event: string, data: string, id: string = "") =
-  ## Send an SSE event to a connection
+proc sendEvent(connection: MummySseConnection, event: string, data: string, id: string = "") =
+  ## Send an SSE event to a connection (renamed from sendEvent for unified API)
   let sseEvent = SSEEvent(
     event: some(event),
     data: data,
@@ -70,12 +72,9 @@ proc sendSseEvent(connection: MummySseConnection, event: string, data: string, i
 
 proc sendSseMessage(connection: MummySseConnection, jsonMessage: JsonNode, id: string = "") =
   ## Send a JSON-RPC message via SSE
-  sendSseEvent(connection, "message", $jsonMessage, id)
+  sendEvent(connection, "message", $jsonMessage, id)
 
-proc broadcastMessage(transport: SseTransport, jsonMessage: JsonNode) =
-  ## Broadcast a message to all connected SSE clients
-  for connection in transport.connectionPool.getAllConnections():
-    sendSseMessage(connection, jsonMessage)
+# Note: broadcastMessage is now implemented as a polymorphic method below
 
 proc setupRoutes(transport: SseTransport) =
   ## Setup SSE and message handling routes
@@ -109,7 +108,7 @@ proc setupRoutes(transport: SseTransport) =
         "type": "endpoint",
         "endpoint": transport.messageEndpoint
       }
-      sendSseEvent(connection, "endpoint", $endpointEvent)
+      sendEvent(connection, "endpoint", $endpointEvent)
       
       # Note: mummy handles the connection lifecycle, no need for manual keep-alive
       
@@ -213,7 +212,7 @@ proc stop*(transport: SseTransport) =
     # Close all SSE connections
     for connection in transport.connectionPool.connections():
       try:
-        sendSseEvent(connection, "close", "Server shutting down")
+        sendEvent(connection, "close", "Server shutting down")
       except:
         discard
     transport.connectionPool = newConnectionPool[MummySseConnection]()
@@ -224,3 +223,45 @@ proc stop*(transport: SseTransport) =
 proc getActiveConnectionCount*(transport: SseTransport): int =
   ## Get the number of active SSE connections
   transport.connectionPool.connectionCount()
+
+# Unified transport API for compatibility with WebSocket transport
+# Note: sendEvent is now implemented as a polymorphic method below
+
+# Polymorphic method implementations for TransportInterface
+method broadcastMessage*(transport: SseTransport, jsonMessage: JsonNode) =
+  ## Polymorphic implementation - broadcast to all SSE clients
+  for connection in transport.connectionPool.connections():
+    sendSseMessage(connection, jsonMessage)
+
+method sendEvent*(transport: SseTransport, eventType: string, data: JsonNode, target: string = "") =
+  ## Polymorphic implementation - send custom event to SSE clients
+  let dataStr = $data
+  if target != "":
+    # Send to specific connection if target specified
+    for connection in transport.connectionPool.connections():
+      if connection.id == target:
+        sendEvent(connection, eventType, dataStr)
+        break
+  else:
+    # Broadcast to all connections
+    for connection in transport.connectionPool.connections():
+      sendEvent(connection, eventType, dataStr)
+
+method getTransportKind*(transport: SseTransport): TransportKind =
+  ## Polymorphic implementation - return SSE transport kind
+  return tkSSE
+
+# Clean API overloads that hide the casting
+proc setTransport*(server: McpServer, transport: SseTransport) =
+  ## Set SSE transport with clean API (casting handled internally)
+  server.setSseTransport(cast[pointer](transport))
+
+proc getTransport*(server: McpServer, transportType: typedesc[SseTransport]): SseTransport =
+  ## Get SSE transport with clean API (casting handled internally)
+  let transportPtr = server.getSseTransportPtr()
+  if transportPtr != nil:
+    return cast[SseTransport](transportPtr)
+  else:
+    return nil
+
+
