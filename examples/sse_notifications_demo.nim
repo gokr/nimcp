@@ -1,28 +1,58 @@
 ## SSE Notifications Demo - showcases server-initiated events
 ## Demonstrates the key advantage of SSE: server-to-client notifications
+## Uses enhanced server architecture with context-based server access
 
 import ../src/nimcp
-import json, math, strformat, options, times, random, os
+import ../src/nimcp/server as serverModule  # Explicit import for transport functions
+import json, math, strformat, options, times, os
 
-proc addTool(args: JsonNode): McpToolResult =
+proc addTool(args: JsonNode): McpToolResult {.gcsafe.} =
   let a = args.getOrDefault("a").getFloat()
   let b = args.getOrDefault("b").getFloat()
   return McpToolResult(content: @[createTextContent(fmt"Result: {a + b}")])
 
-proc notifyTool(args: JsonNode): McpToolResult =
-  ## Tool that triggers server notifications via SSE
+proc notifyTool(ctx: McpRequestContext, args: JsonNode): McpToolResult {.gcsafe.} =
+  ## Tool that triggers server notifications via SSE using polymorphic transport access
   let message = args.getOrDefault("message").getStr("Hello from MCP!")
   let count = args.getOrDefault("count").getInt(3)
   
-  # This tool demonstrates how an MCP server could send notifications
-  # In a real implementation, we'd send these via the SSE transport
-  echo fmt"📡 Would send {count} notifications with message: '{message}'"
-  echo "   (In a full implementation, these would go via SSE to all connected clients)"
+  echo fmt"📡 Sending {count} notifications with message: '{message}'"
   
-  return McpToolResult(content: @[createTextContent(fmt"Notification tool executed: will send {count} messages '{message}'")])
+  # Access transport polymorphically - works with ANY transport type!
+  let server = ctx.getServer()
+  let transport = if server != nil: server.getTransport() else: nil  # 🎉 No type specification needed!
+  
+  if transport == nil:
+    echo "   ⚠️  No transport available"
+    return McpToolResult(content: @[createTextContent("Error: No transport available")])
+  
+  # Optional: Show which transport is being used
+  let transportKind = transport.getTransportKind()
+  echo fmt"   📡 Using transport: {transportKind}"
+  
+  # Send notifications using polymorphic API
+  for i in 1..count:
+    let notificationData = %*{
+      "type": "notification",
+      "message": fmt"{message} (#{i}/{count})",
+      "timestamp": $now(),
+      "index": i,
+      "total": count,
+      "transport": $transportKind
+    }
+    
+    # This SAME CODE works with SSE, WebSocket, HTTP, or any future transport!
+    transport.broadcastMessage(notificationData)  # 🚀 Polymorphic call!
+    echo fmt"   📨 Sent notification {i}/{count} via {transportKind}"
+    
+    # Small delay between notifications for demonstration
+    if i < count:
+      sleep(500)
+  
+  return McpToolResult(content: @[createTextContent(fmt"Sent {count} notifications via {transportKind}: '{message}'")])
 
-proc slowCountTool(args: JsonNode): McpToolResult =
-  ## Tool that simulates progress updates that could be sent via SSE
+proc slowCountTool(ctx: McpRequestContext, args: JsonNode): McpToolResult {.gcsafe.} =
+  ## Tool that sends real-time progress updates using polymorphic transport access
   let target = args.getOrDefault("target").getInt(10)
   let delay = args.getOrDefault("delay_ms").getInt(1000)
   
@@ -30,23 +60,61 @@ proc slowCountTool(args: JsonNode): McpToolResult =
     return McpToolResult(content: @[createTextContent("Error: Target must be between 1 and 100")])
   
   echo fmt"🔄 Starting slow count to {target} (delay: {delay}ms per step)"
-  echo "   📨 Progress updates would be sent via SSE in real implementation:"
+  
+  # Access transport polymorphically - works with ANY transport type!
+  let server = ctx.getServer()
+  let transport = if server != nil: server.getTransport() else: nil  # 🎉 No type needed!
+  
+  if transport == nil:
+    echo "   ⚠️  No transport available"
+    return McpToolResult(content: @[createTextContent("Error: No transport available")])
+  
+  let transportKind = transport.getTransportKind()
+  echo fmt"   📨 Sending real-time progress updates via {transportKind}:"
+  
+  # Send start notification using polymorphic API
+  let startData = %*{
+    "type": "progress_start",
+    "operation": "slow_count",
+    "target": target,
+    "delay_ms": delay,
+    "transport": $transportKind,
+    "timestamp": $now()
+  }
+  transport.broadcastMessage(startData)  # 🚀 Works with any transport!
+  echo fmt"   🚀 Sent start notification via {transportKind}"
   
   for i in 1..target:
     sleep(delay)
-    # In a real SSE implementation, we'd send progress like this:
-    echo fmt"   📊 Progress: {i}/{target} ({(i*100) div target}%)"
-    # sseTransport.broadcastMessage(%*{
-    #   "type": "progress",
-    #   "current": i,
-    #   "total": target,
-    #   "percentage": (i * 100) div target
-    # })
+    let percentage = (i * 100) div target
+    
+    # Send real progress updates using polymorphic API
+    let progressData = %*{
+      "type": "progress",
+      "operation": "slow_count",
+      "current": i,
+      "total": target,
+      "percentage": percentage,
+      "transport": $transportKind,
+      "timestamp": $now()
+    }
+    transport.broadcastMessage(progressData)  # 🚀 Transport-agnostic!
+    echo fmt"   📊 Progress via {transportKind}: {i}/{target} ({percentage}%)"
   
-  echo "   ✅ Count completed - final notification would be sent"
-  return McpToolResult(content: @[createTextContent(fmt"Slow count completed: reached {target}")])
+  # Send completion notification using polymorphic API
+  let completeData = %*{
+    "type": "progress_complete",
+    "operation": "slow_count",
+    "final_count": target,
+    "transport": $transportKind,
+    "timestamp": $now()
+  }
+  transport.broadcastMessage(completeData)  # 🚀 Universal API!
+  echo fmt"   ✅ Sent completion notification via {transportKind}"
+  
+  return McpToolResult(content: @[createTextContent(fmt"Slow count completed: reached {target} with real-time {transportKind} updates")])
 
-proc serverStatsResource(uri: string): McpResourceContents =
+proc serverStatsResource(uri: string): McpResourceContents {.gcsafe.} =
   ## Resource showing what SSE notifications would contain
   let currentTime = now()
   
@@ -58,6 +126,7 @@ proc serverStatsResource(uri: string): McpResourceContents =
 - **Time**: {currentTime}
 - **Transport**: SSE (Server-Sent Events)
 - **Notifications**: Enabled
+- **Architecture**: Enhanced with server-aware context
 
 ## What SSE Enables
 
@@ -109,10 +178,28 @@ Alert clients about important events:
 }}
 ```
 
+## Enhanced Architecture
+
+### 🏗️ **Server-Aware Context**
+Tools now receive server access through the request context:
+
+```nim
+proc notifyTool(ctx: McpRequestContext, args: JsonNode): McpToolResult =
+  let server = ctx.getServer()
+  let transport = server.getCustomData("sse_transport", SseTransport)
+  transport.broadcastMessage(data)
+```
+
+### ✅ **Benefits**
+- **No global state** - server access through context
+- **Clean architecture** - proper dependency injection
+- **Type-safe** - compile-time checked server access
+- **Composable** - works with multiple server instances
+
 ## Demo Tools
 
-1. **notify**: Demonstrates notification broadcasting
-2. **slow_count**: Shows progress update streaming  
+1. **notify**: Demonstrates notification broadcasting with server context
+2. **slow_count**: Shows progress update streaming via server context
 3. **add**: Regular tool (instant response)
 
 ## Real-world SSE Use Cases
@@ -159,7 +246,11 @@ not just respond to requests!
 when isMainModule:
   let server = newMcpServer("sse-notifications-demo", "1.0.0")
   
-  # Register demonstration tools
+  # Create SSE transport and store in server using clean type-safe API
+  let transport = newSseTransport(server, port = 8080, host = "127.0.0.1")
+  server.setTransport(transport)  # Clean API - no casting needed!
+  
+  # Register demonstration tools using context-aware handlers
   server.registerTool(McpTool(
     name: "add",
     description: some("Simple addition (instant response)"),
@@ -173,7 +264,7 @@ when isMainModule:
     }
   ), addTool)
   
-  server.registerTool(McpTool(
+  server.registerToolWithContext(McpTool(
     name: "notify", 
     description: some("Demonstrate server notifications via SSE"),
     inputSchema: %*{
@@ -186,7 +277,7 @@ when isMainModule:
     }
   ), notifyTool)
   
-  server.registerTool(McpTool(
+  server.registerToolWithContext(McpTool(
     name: "slow_count",
     description: some("Count slowly with progress updates via SSE"),
     inputSchema: %*{
@@ -203,21 +294,29 @@ when isMainModule:
   server.registerResource(McpResource(
     uri: "sse://demo-info",
     name: "SSE Notifications Demo Info",
-    description: some("Information about SSE capabilities and demo"),
+    description: some("Information about SSE capabilities and enhanced architecture"),
     mimeType: some("text/markdown")
   ), serverStatsResource)
 
-  echo "🎯 SSE NOTIFICATIONS DEMO SERVER"
-  echo "================================="
+  echo "🎯 SSE NOTIFICATIONS DEMO - ENHANCED ARCHITECTURE"
+  echo "================================================"
   echo ""
-  echo "🔥 This demo showcases the KEY ADVANTAGE of SSE:"
+  echo "🔥 This demo showcases the COMPLETE SSE solution:"
   echo "   📡 SERVER-INITIATED EVENTS (not just request-response!)"
+  echo "   🏗️  Enhanced server architecture with context-based access"
   echo ""
-  echo "🌟 What makes SSE special:"
+  echo "🌟 What makes this implementation special:"
   echo "   ✅ Server can PUSH data to clients anytime"
   echo "   ✅ Real-time progress updates during long operations"
   echo "   ✅ Live notifications and status broadcasts"
-  echo "   ✅ Streaming results as they're computed"
+  echo "   ✅ Clean architecture without global state or closures"
+  echo "   ✅ Type-safe server access through request context"
+  echo ""
+  echo "🏗️  Architecture Highlights:"
+  echo "   🔧 Transport stored in server.customData"
+  echo "   📋 Tools access server via ctx.getServer()"
+  echo "   🛡️  Type-safe data retrieval with server.getCustomData()"
+  echo "   🔄 No closures or global variables needed"
   echo ""
   echo "🌐 Demo Endpoints:"
   echo "   📨 SSE Stream: http://127.0.0.1:8080/sse"
@@ -261,6 +360,5 @@ when isMainModule:
   echo ""
   echo "🚀 Starting server..."
   
-  # Create and start SSE transport
-  let transport = newSseTransport(server, port = 8080, host = "127.0.0.1")
+  # Start the SSE transport
   transport.start()
