@@ -30,10 +30,11 @@ proc initContextManager*() =
     initLock(globalContextManager.contextLock)
 
 proc newMcpRequestContext*(requestId: string = ""): McpRequestContext =
-  ## Create a new request context with unique ID
+  ## Create a new request context with unique ID (for backward compatibility)
   let id = if requestId.len > 0: requestId else: $now().toTime().toUnix() & "_" & $rand(1000)
   
   result = McpRequestContext(
+    server: nil,  # Server reference not available in this constructor
     requestId: id,
     startTime: now(),
     cancelled: false,
@@ -41,6 +42,7 @@ proc newMcpRequestContext*(requestId: string = ""): McpRequestContext =
     progressCallback: nil,
     logCallback: nil
   )
+
 
 proc registerContext*(ctx: McpRequestContext) =
   ## Register a context with the context manager

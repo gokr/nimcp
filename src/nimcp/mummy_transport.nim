@@ -119,3 +119,16 @@ proc runHttp*(server: McpServer, port: int = 8080, host: string = "127.0.0.1", a
   ## Convenience function to run an MCP server over HTTP
   let transport = newMummyTransport(server, port, host, authConfig)
   transport.serve()
+
+# Clean API overloads that hide the casting  
+proc setTransport*(server: McpServer, transport: MummyTransport) =
+  ## Set HTTP transport with clean API (casting handled internally)
+  server.setHttpTransport(cast[pointer](transport))
+
+proc getTransport*(server: McpServer, transportType: typedesc[MummyTransport]): MummyTransport =
+  ## Get HTTP transport with clean API (casting handled internally)
+  let transportPtr = server.getHttpTransportPtr()
+  if transportPtr != nil:
+    return cast[MummyTransport](transportPtr)
+  else:
+    return nil

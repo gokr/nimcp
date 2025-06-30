@@ -82,6 +82,43 @@ mcpTool:
     return "Result: 42"
 ```
 
+#### Context-Aware vs Regular Tools
+
+NimCP supports **two types of tools**:
+
+**Regular Tools** - Simple functions that only receive arguments:
+```nim
+mcpTool:
+  proc add(a: float, b: float): string =
+    ## Add two numbers together
+    return fmt"Result: {a + b}"
+```
+
+**Context-Aware Tools** - Advanced functions that also receive server context for accessing transport-specific features:
+```nim
+# Manual registration required for context-aware tools
+proc notifyTool(ctx: McpRequestContext, args: JsonNode): McpToolResult =
+  ## Send real-time notifications via SSE transport
+  let server = ctx.getServer()
+  let transport = server.getCustomData("sse_transport", SseTransport)
+  transport.broadcastMessage(%*{"message": "Hello from server!"})
+  return McpToolResult(content: @[createTextContent("Notification sent")])
+
+# Register with context support
+server.registerToolWithContext(tool, notifyTool)
+```
+
+**When to use Context-Aware Tools:**
+- Server-initiated events (SSE notifications, WebSocket broadcasts)
+- Progress tracking during long operations  
+- Access to server configuration or transport-specific features
+- Custom logging or middleware integration
+
+**Registration Methods:**
+- `server.registerTool(tool, handler)` - Regular tools
+- `server.registerToolWithContext(tool, handler)` - Context-aware tools
+- Same pattern applies to resources and prompts
+
 ### Resources
 
 Resources provide data that can be read by LLM applications:
@@ -177,6 +214,10 @@ Check out the `examples/` directory for comprehensive examples:
 - [`logging_example.nim`](examples/logging_example.nim) - Pluggable logging system with multiple handlers
 - [`fluent_api_example.nim`](examples/fluent_api_example.nim) - Method chaining and fluent UFCS API
 - [`enhanced_calculator.nim`](examples/enhanced_calculator.nim) - Comprehensive example showcasing all features
+- [`sse_notifications_demo.nim`](examples/sse_notifications_demo.nim) - Server-initiated events and real-time notifications with context-aware tools
+- [`sse_notifications_macro.nim`](examples/sse_notifications_macro.nim) - Mixed approach: macro API + manual context-aware registration  
+- [`sse_notifications_full_macro.nim`](examples/sse_notifications_full_macro.nim) - Pure macro API with automatic context detection
+- [`websocket_notifications_demo.nim`](examples/websocket_notifications_demo.nim) - WebSocket notifications using unified transport API
 
 See the [examples README](examples/README.md) for detailed explanations and architecture comparisons.
 

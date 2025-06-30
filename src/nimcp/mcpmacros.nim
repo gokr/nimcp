@@ -67,8 +67,30 @@ proc generateInputSchema(params: NimNode): JsonNode =
   result["properties"] = properties
   result["required"] = required
 
+# Generate JSON schema from proc parameters, skipping first parameter (for context-aware tools)
+proc generateInputSchemaSkipFirst(params: NimNode): JsonNode =
+  var properties = newJObject()
+  var required = newJArray()
+  
+  # Skip first param (implicit result) and second param (context), start from index 2
+  for i in 2..<params.len:
+    let param = params[i]
+    if param.kind == nnkIdentDefs:
+      let paramType = param[^2]  # Type is second to last
+      for j in 0..<param.len-2:  # All except type and default value
+        let paramName = $param[j]
+        if paramName != "":
+          properties[paramName] = nimTypeToJsonSchema(paramType)
+          required.add(newJString(paramName))
+  
+  result = newJObject()
+  result["type"] = newJString("object")
+  result["properties"] = properties
+  result["required"] = required
+
 
 # Advanced macro for introspecting proc signatures and auto-generating tools
+# Supports both regular tools and context-aware tools with automatic detection
 macro mcpTool*(procDef: untyped): untyped =
   # Handle both direct proc def and block containing proc def
   var actualProcDef: NimNode
@@ -89,8 +111,22 @@ macro mcpTool*(procDef: untyped): untyped =
   let docComment = extractDocComment(actualProcDef).splitLines()[0].strip()
   let description = if docComment.len > 0: docComment else: "Auto-generated tool: " & toolName
   
-  # Generate input schema from parameters
-  let inputSchema = generateInputSchema(params)
+  # Check if this is a context-aware tool by examining first parameter
+  var isContextAware = false
+  var contextParamName = ""
+  if params.len > 1:  # Has parameters beyond return type
+    let firstParam = params[1]
+    if firstParam.kind == nnkIdentDefs and firstParam.len >= 2:
+      let paramType = firstParam[^2]
+      if paramType.kind == nnkIdent and $paramType == "McpRequestContext":
+        isContextAware = true
+        contextParamName = $firstParam[0]
+  
+  # Generate input schema from parameters (skip context parameter for schema)
+  let inputSchema = if isContextAware: 
+                      generateInputSchemaSkipFirst(params) 
+                    else: 
+                      generateInputSchema(params)
   
   # Generate the wrapper proc name to avoid conflicts
   let wrapperName = ident("tool_" & toolName & "_wrapper")
@@ -110,75 +146,141 @@ macro mcpTool*(procDef: untyped): untyped =
     )
   )
   
-  # Build wrapper procedure manually
-  let jsonArgsParam = newIdentDefs(ident("jsonArgs"), bindSym("JsonNode"))
-  let returnType = bindSym("McpToolResult")  # Change: Remove Future and async
-  
-  # Generate argument extractions
-  var argExtractions = newSeq[NimNode]()
-  for i in 1..<params.len:
-    let param = params[i]
-    if param.kind == nnkIdentDefs:
-      let paramType = param[^2]
-      for j in 0..<param.len-2:
-        let paramName = $param[j]
-        if paramName != "":
-          let paramNameLit = newLit(paramName)
-          let jsonArgsIdent = ident("jsonArgs")
-          case $paramType:
-          of "int", "int8", "int16", "int32", "int64":
-            argExtractions.add(newCall("getInt", newCall("[]", jsonArgsIdent, paramNameLit)))
-          of "uint", "uint8", "uint16", "uint32", "uint64":
-            argExtractions.add(newCall("getInt", newCall("[]", jsonArgsIdent, paramNameLit)))
-          of "float", "float32", "float64":
-            argExtractions.add(newCall("getFloat", newCall("[]", jsonArgsIdent, paramNameLit)))
-          of "string":
-            argExtractions.add(newCall("getStr", newCall("[]", jsonArgsIdent, paramNameLit)))
-          of "bool":
-            argExtractions.add(newCall("getBool", newCall("[]", jsonArgsIdent, paramNameLit)))
-          else:
-            argExtractions.add(newCall("getStr", newCall("[]", jsonArgsIdent, paramNameLit)))
+  # Build wrapper procedure - different signature for context-aware vs regular tools
+  if isContextAware:
+    # Context-aware wrapper: proc(ctx: McpRequestContext, jsonArgs: JsonNode): McpToolResult
+    let ctxParam = newIdentDefs(ident("ctx"), bindSym("McpRequestContext"))
+    let jsonArgsParam = newIdentDefs(ident("jsonArgs"), bindSym("JsonNode"))
+    let returnType = bindSym("McpToolResult")
+    
+    # Generate argument extractions (skip context parameter)
+    var argExtractions = newSeq[NimNode]()
+    argExtractions.add(ident("ctx"))  # Add context as first argument
+    
+    for i in 2..<params.len:  # Skip result and context params
+      let param = params[i]
+      if param.kind == nnkIdentDefs:
+        let paramType = param[^2]
+        for j in 0..<param.len-2:
+          let paramName = $param[j]
+          if paramName != "":
+            let paramNameLit = newLit(paramName)
+            let jsonArgsIdent = ident("jsonArgs")
+            case $paramType:
+            of "int", "int8", "int16", "int32", "int64":
+              argExtractions.add(newCall("getInt", newCall("[]", jsonArgsIdent, paramNameLit)))
+            of "uint", "uint8", "uint16", "uint32", "uint64":
+              argExtractions.add(newCall("getInt", newCall("[]", jsonArgsIdent, paramNameLit)))
+            of "float", "float32", "float64":
+              argExtractions.add(newCall("getFloat", newCall("[]", jsonArgsIdent, paramNameLit)))
+            of "string":
+              argExtractions.add(newCall("getStr", newCall("[]", jsonArgsIdent, paramNameLit)))
+            of "bool":
+              argExtractions.add(newCall("getBool", newCall("[]", jsonArgsIdent, paramNameLit)))
+            else:
+              argExtractions.add(newCall("getStr", newCall("[]", jsonArgsIdent, paramNameLit)))
 
-  # Build the function call and wrapper body (synchronous)
-  let functionCall = newCall(procName, argExtractions)
-  let resultAssign = newLetStmt(ident("functionResult"), functionCall)  # Change: Remove await
-  let returnStmt = nnkReturnStmt.newTree(
-    nnkObjConstr.newTree(
-      bindSym("McpToolResult"),
-      nnkExprColonExpr.newTree(
-        ident("content"),
-        newCall(bindSym("@"), newNimNode(nnkBracket).add(
-          newCall(bindSym("createTextContent"), ident("functionResult"))
-        ))
+    # Build the function call and wrapper body
+    let functionCall = newCall(procName, argExtractions)
+    let resultAssign = newLetStmt(ident("functionResult"), functionCall)
+    let returnStmt = nnkReturnStmt.newTree(
+      nnkObjConstr.newTree(
+        bindSym("McpToolResult"),
+        nnkExprColonExpr.newTree(
+          ident("content"),
+          newCall(bindSym("@"), newNimNode(nnkBracket).add(
+            newCall(bindSym("createTextContent"), ident("functionResult"))
+          ))
+        )
       )
     )
-  )
-  
-  let wrapperBody = newStmtList(resultAssign, returnStmt)
-  let wrapperProc = newProc(
-    wrapperName,
-    [returnType, jsonArgsParam],
-    wrapperBody,
-    nnkProcDef
-    # Change: Remove asyncPragma
-  )
-  
-  result.add(wrapperProc)
-  
-  # Add the original function definition first so it's available when the wrapper is compiled
-  result.insert(1, actualProcDef)
-  
-  # Register the tool
-  result.add(quote do:
-    currentMcpServer.registerTool(`toolIdent`, `wrapperName`)
-  )
+    
+    let wrapperBody = newStmtList(resultAssign, returnStmt)
+    let wrapperProc = newProc(
+      wrapperName,
+      [returnType, ctxParam, jsonArgsParam],
+      wrapperBody,
+      nnkProcDef
+    )
+    
+    result.add(wrapperProc)
+    
+    # Add the original function definition first so it's available when the wrapper is compiled
+    result.insert(1, actualProcDef)
+    
+    # Register the context-aware tool
+    result.add(quote do:
+      currentMcpServer.registerToolWithContext(`toolIdent`, `wrapperName`)
+    )
+  else:
+    # Regular wrapper: proc(jsonArgs: JsonNode): McpToolResult
+    let jsonArgsParam = newIdentDefs(ident("jsonArgs"), bindSym("JsonNode"))
+    let returnType = bindSym("McpToolResult")
+    
+    # Generate argument extractions
+    var argExtractions = newSeq[NimNode]()
+    for i in 1..<params.len:
+      let param = params[i]
+      if param.kind == nnkIdentDefs:
+        let paramType = param[^2]
+        for j in 0..<param.len-2:
+          let paramName = $param[j]
+          if paramName != "":
+            let paramNameLit = newLit(paramName)
+            let jsonArgsIdent = ident("jsonArgs")
+            case $paramType:
+            of "int", "int8", "int16", "int32", "int64":
+              argExtractions.add(newCall("getInt", newCall("[]", jsonArgsIdent, paramNameLit)))
+            of "uint", "uint8", "uint16", "uint32", "uint64":
+              argExtractions.add(newCall("getInt", newCall("[]", jsonArgsIdent, paramNameLit)))
+            of "float", "float32", "float64":
+              argExtractions.add(newCall("getFloat", newCall("[]", jsonArgsIdent, paramNameLit)))
+            of "string":
+              argExtractions.add(newCall("getStr", newCall("[]", jsonArgsIdent, paramNameLit)))
+            of "bool":
+              argExtractions.add(newCall("getBool", newCall("[]", jsonArgsIdent, paramNameLit)))
+            else:
+              argExtractions.add(newCall("getStr", newCall("[]", jsonArgsIdent, paramNameLit)))
+
+    # Build the function call and wrapper body
+    let functionCall = newCall(procName, argExtractions)
+    let resultAssign = newLetStmt(ident("functionResult"), functionCall)
+    let returnStmt = nnkReturnStmt.newTree(
+      nnkObjConstr.newTree(
+        bindSym("McpToolResult"),
+        nnkExprColonExpr.newTree(
+          ident("content"),
+          newCall(bindSym("@"), newNimNode(nnkBracket).add(
+            newCall(bindSym("createTextContent"), ident("functionResult"))
+          ))
+        )
+      )
+    )
+    
+    let wrapperBody = newStmtList(resultAssign, returnStmt)
+    let wrapperProc = newProc(
+      wrapperName,
+      [returnType, jsonArgsParam],
+      wrapperBody,
+      nnkProcDef
+    )
+    
+    result.add(wrapperProc)
+    
+    # Add the original function definition first so it's available when the wrapper is compiled
+    result.insert(1, actualProcDef)
+    
+    # Register the regular tool
+    result.add(quote do:
+      currentMcpServer.registerTool(`toolIdent`, `wrapperName`)
+    )
 
 # Global server instance for macro access
 var currentMcpServer*: McpServer
 
 # Server creation template with advanced tool registration
 template mcpServer*(name: string, version: string, body: untyped): untyped =
-  let mcpServerInstance = newMcpServer(name, version)
+  let mcpServerInstance {.inject.} = newMcpServer(name, version)
   currentMcpServer = mcpServerInstance
   body
   
