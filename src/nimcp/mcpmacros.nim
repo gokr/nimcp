@@ -1,7 +1,7 @@
 ## Powerful macros for easy MCP server creation
 
 import macros, asyncdispatch, json, tables, options, strutils, typetraits
-import types, server, protocol
+import types, server, protocol, auth, mummy_transport, websocket_transport
 
 # Helper to convert Nim types to JSON schema types
 proc nimTypeToJsonSchema(nimType: NimNode): JsonNode =
@@ -182,8 +182,22 @@ template mcpServer*(name: string, version: string, body: untyped): untyped =
   currentMcpServer = mcpServerInstance
   body
   
-  proc runServer*() =
-    mcpServerInstance.runStdio()
+  proc runServer*(transport: McpTransportConfig = StdioTransport()) =
+    case transport.kind:
+    of mtStdio:
+      mcpServerInstance.runStdio()
+    of mtHttp:
+      let authConfig = if transport.tokenValidator != nil:
+                        newAuthConfig(transport.tokenValidator, transport.requireHttps)
+                      else:
+                        newAuthConfig()
+      mcpServerInstance.runHttp(transport.port, transport.host, authConfig)
+    of mtWebSocket:
+      let authConfig = if transport.wsTokenValidator != nil:
+                        newAuthConfig(transport.wsTokenValidator, transport.wsRequireHttps)
+                      else:
+                        newAuthConfig()
+      mcpServerInstance.runWebSocket(transport.wsPort, transport.wsHost, authConfig)
   
   when isMainModule:
     runServer()
