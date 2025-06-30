@@ -193,9 +193,10 @@ type
     Assistant = "assistant"
     System = "system"
 
-    # Request context types
+  # Request context types
   McpRequestContext* = ref object
     ## Request context providing access to server state and utilities
+    server*: pointer  # Will be cast to McpServer when needed
     requestId*: string
     startTime*: DateTime
     cancelled*: bool
@@ -235,7 +236,54 @@ type
   McpPromptHandler* = proc(name: string, args: Table[string, JsonNode]): McpGetPromptResult {.gcsafe, closure.}
   McpPromptHandlerWithContext* = proc(ctx: McpRequestContext, name: string, args: Table[string, JsonNode]): McpGetPromptResult {.gcsafe, closure.}
   
-  # Middleware types
+  # Transport interface types for polymorphism
+  McpTransportCapabilities* = set[TransportCapability]
+  TransportCapability* = enum
+    tcBroadcast = "broadcast"     ## Can broadcast messages to all clients
+    tcUnicast = "unicast"         ## Can send messages to specific clients  
+    tcEvents = "events"           ## Supports custom event types
+    tcBidirectional = "bidirectional"  ## Supports client-to-server communication
+
+# Transport union type - using pointer to avoid circular dependencies
+  TransportKind* = enum
+    tkNone = "none"           ## No transport set
+    tkStdio = "stdio"         ## Standard input/output transport
+    tkHttp = "http"           ## HTTP transport
+    tkWebSocket = "websocket" ## WebSocket transport  
+    tkSSE = "sse"             ## Server-Sent Events transport
+  
+  McpTransport* = object
+    ## Union type for different transport implementations (using pointers to avoid circular deps)
+    case kind*: TransportKind
+    of tkNone, tkStdio:
+      discard  # No additional data needed
+    of tkHttp:
+      httpTransport*: pointer  # HttpTransport ref object
+    of tkWebSocket:
+      wsTransport*: pointer    # WebSocketTransport ref object
+    of tkSSE:
+      sseTransport*: pointer   # SseTransport ref object
+
+  # Abstract transport interface for polymorphic access
+  TransportInterface* = ref object of RootObj
+    ## Abstract interface that all transports implement for polymorphic access
+    capabilities*: McpTransportCapabilities
+    
+# Polymorphic methods for transport interface
+method broadcastMessage*(transport: TransportInterface, jsonMessage: JsonNode) {.base, gcsafe.} =
+  ## Base method for broadcasting messages - implemented by concrete transports
+  raise newException(CatchableError, "broadcastMessage not implemented for this transport")
+
+method sendEvent*(transport: TransportInterface, eventType: string, data: JsonNode, target: string = "") {.base, gcsafe.} =
+  ## Base method for sending events - implemented by concrete transports
+  raise newException(CatchableError, "sendEvent not implemented for this transport")
+
+method getTransportKind*(transport: TransportInterface): TransportKind {.base, gcsafe.} =
+  ## Get the kind of transport - implemented by concrete transports
+  return tkNone
+
+# Middleware types
+type
   McpMiddleware* = object
     ## Middleware for request/response processing
     name*: string
