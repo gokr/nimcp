@@ -14,6 +14,8 @@ examples/*
 *.exe
 nimcache/
 htmldocs/
+build/
+testresults
 
 # IDE files
 .vscode/
