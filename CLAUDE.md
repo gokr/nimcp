@@ -173,6 +173,7 @@ The macro API automatically extracts:
 ### Variable Naming
 - Do not introduce a local variable called "result" since Nim has such a variable already defined that represents the return value
 - Always use doc comment with double "##" right below the signature for Nim procs, not above
+- Do not add comments talking about type safety or how good something is, it is just noise. Be brief.
 
 ### Type System Preferences
 - **Prefer generics over methods**: Use generic procedures with type parameters rather than method dispatch when possible
@@ -346,69 +347,8 @@ mcpTool:
     return McpToolResult(content: @[createTextContent("Sent")])
 ```
 
-## Transport Architecture Simplification Plan
-
-The current transport system is overly complex with multiple abstraction layers. Here's a plan to simplify it:
-
-### Current Issues
-1. **setTransport() + run() bug**: `server.setTransport(transport); server.run()` ignores the transport and uses stdio
-2. **Complex pointer casting**: Uses unsafe `pointer` types to break circular dependencies
-3. **Multiple abstraction layers**: McpTransport union + TransportInterface inheritance + pointer casting
-4. **Inconsistent API**: Different patterns for different operations
-
-### Proposed Solution: Pure Object Variants with Generics
-
-**Option 1: Unified Object Variant (Recommended)**
-```nim
-type
-  McpTransport* = object
-    case kind*: TransportKind
-    of tkStdio:
-      discard
-    of tkSSE:
-      ssePort*: int
-      sseHost*: string
-      sseAuth*: AuthConfig
-    of tkWebSocket:
-      wsPort*: int
-      wsHost*: string
-      wsAuth*: AuthConfig
-    of tkHttp:
-      httpPort*: int
-      httpHost*: string
-      httpAuth*: AuthConfig
-```
-
-**Benefits:**
-- Single type, no pointers, no casting
-- Type-safe access via pattern matching
-- No circular dependencies
-- All transport data in one place
-- Fix setTransport() + run() issue naturally
-
-**Option 2: Generic Constraints (Alternative)**
-```nim
-type
-  TransportTrait = concept t
-    t.start()
-    t.broadcastMessage(JsonNode)
-    t.getTransportKind() is TransportKind
-
-proc run*[T: TransportTrait](server: McpServer, transport: T) =
-  transport.start()
-```
-
-### Implementation Steps
-1. Replace McpTransport union with configuration-only variant
-2. Eliminate TransportInterface inheritance
-3. Use pattern matching for transport operations
-4. Fix run() method to check server.transport first
-5. Remove all pointer casting
-6. Update all transport implementations
-
 ## Development Best Practices
 - Always end todolists by running all the tests at the end to verify everything compiles and works
-- Use the polymorphic transport system for transport-agnostic tools
 - Prefer context-aware tools when you need access to the server or transport layer
 - Follow the macro API patterns for automatic schema generation
 

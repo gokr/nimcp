@@ -2,7 +2,7 @@
 ## Demonstrates WebSocket transport with Bearer token authentication
 
 import ../src/nimcp
-import json, math, strformat, strutils
+import json, math, strformat
 
 # Simple token validator for demonstration
 proc validateToken(token: string): bool {.gcsafe.} =
@@ -18,7 +18,7 @@ proc validateToken(token: string): bool {.gcsafe.} =
     echo "Invalid token: ", token
     return false
 
-mcpServer("authenticated-websocket-calculator", "1.0.0"):
+let server = mcpServer("authenticated-websocket-calculator", "1.0.0"):
   
   mcpTool:
     proc add(a: float, b: float): string =
@@ -39,8 +39,7 @@ mcpServer("authenticated-websocket-calculator", "1.0.0"):
       ## Calculate base raised to the power of exponent (authenticated operation)
       ## - base: The base number
       ## - exponent: The exponent
-      let result = pow(base, exponent)
-      return fmt"Result: {result}"
+      return fmt"Result: {pow(base, exponent)}"
 
 when isMainModule:
   echo "Starting Authenticated WebSocket Calculator MCP Server..."
@@ -86,4 +85,5 @@ ws.onmessage = function(event) {
   echo ""
   
   # Use WebSocket transport with authentication
-  runServer(WebSocketTransportAuth(8081, "127.0.0.1", false, validateToken))
+  let authConfig = newAuthConfig(validateToken, false)
+  server.runWebSocket(8081, "127.0.0.1", authConfig)

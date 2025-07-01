@@ -113,6 +113,7 @@ proc websocketEventHandler(transport: WebSocketTransport, websocket: WebSocket, 
         echo fmt"WebSocket error on connection {connection.id}"
         transport.connectionPool.removeConnection(connection.id)
         break
+
 proc upgradeHandler(transport: WebSocketTransport, request: Request) {.gcsafe.} =
   ## Handle WebSocket upgrade requests
   
@@ -126,8 +127,6 @@ proc upgradeHandler(transport: WebSocketTransport, request: Request) {.gcsafe.} 
   
   # Upgrade to WebSocket - Mummy handles the upgrade internally
   discard request.upgradeToWebSocket()
-  
-  # WebSocket events will be handled by the websocketEventHandler
 
 proc handleInfoRequest(transport: WebSocketTransport, request: Request) {.gcsafe.} =
   ## Handle GET requests for server info
@@ -166,7 +165,7 @@ proc setupRoutes(transport: WebSocketTransport) =
     request.respond(204, headers, "")
   )
 
-proc serve*(transport: WebSocketTransport) =
+proc start*(transport: WebSocketTransport) =
   ## Start the WebSocket server
   transport.setupRoutes()
   
@@ -200,7 +199,7 @@ proc runWebSocket*(server: McpServer, port: int = 8080, host: string = "127.0.0.
   ## Convenience function to run an MCP server over WebSocket
   let transport = newWebSocketTransport(server, port, host, authConfig)
   try:
-    transport.serve()
+    transport.start()
   finally:
     transport.shutdown()
 

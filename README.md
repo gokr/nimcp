@@ -11,7 +11,7 @@
 
 - **Macro-driven API** - Define servers, tools, resources, and prompts with simple, declarative syntax
 - **Full MCP 2024-11-05 Support** - Complete implementation of MCP specification with JSON-RPC 2.0
-- **Multiple Transports** - Supports stdio, HTTP, and WebSocket transports with authentication
+- **Multiple Transports** - Supports stdio, SSE, HTTP, and WebSocket transports with authentication
 - **Enhanced Type System** - Support for objects, unions, enums, optional types, and arrays
 - **Automatic Schema Generation** - JSON schemas generated from Nim type signatures
 - **Request Context System** - Progress tracking, cancellation, and request lifecycle management
@@ -19,13 +19,11 @@
 - **Resource URI Templates** - Dynamic URI patterns with parameter extraction (`/users/{id}`)
 - **Server Composition** - Mount multiple MCP servers with prefixes and routing for API gateways
 - **Pluggable Logging** - Flexible logging system with multiple handlers, levels, and structured output
-- **Real-time Communication** - WebSocket transport for bidirectional real-time updates and live data streaming
 - **Middleware Pipeline** - Request/response transformation and processing hooks
 - **Fluent UFCS API** - Method chaining patterns for elegant server configuration
 - **High Performance** - Mummy based HTTP and WebSockets implementation and modern taskpools for stdio transport
 - **Comprehensive Testing** - Full test suite covering all features and edge cases
 - **Minimal Dependencies** - Uses only essential, well-maintained packages
-- **Easy Integration** - Works with any MCP-compatible LLM application
 
 ## Quick Start
 
@@ -96,16 +94,14 @@ mcpTool:
 
 **Context-Aware Tools** - Advanced functions that also receive server context for accessing transport-specific features:
 ```nim
-# Manual registration required for context-aware tools
-proc notifyTool(ctx: McpRequestContext, args: JsonNode): McpToolResult =
-  ## Send real-time notifications via SSE transport
-  let server = ctx.getServer()
-  let transport = server.getCustomData("sse_transport", SseTransport)
-  transport.broadcastMessage(%*{"message": "Hello from server!"})
-  return McpToolResult(content: @[createTextContent("Notification sent")])
-
-# Register with context support
-server.registerToolWithContext(tool, notifyTool)
+# Context aware tools need to have first parameter being an McpRequestContext
+mcpTool:
+  proc notifyTool(ctx: McpRequestContext, args: JsonNode): string =
+    ## Send real-time notifications via SSE transport
+    let server = ctx.getServer()
+    let transport = server.getCustomData("sse_transport", SseTransport)
+    transport.broadcastMessage(%*{"message": "Hello from server!"})
+    return "Notification sent"
 ```
 
 **When to use Context-Aware Tools:**
@@ -114,7 +110,7 @@ server.registerToolWithContext(tool, notifyTool)
 - Access to server configuration or transport-specific features
 - Custom logging or middleware integration
 
-**Registration Methods:**
+**Manual Registration Methods:**
 - `server.registerTool(tool, handler)` - Regular tools
 - `server.registerToolWithContext(tool, handler)` - Context-aware tools
 - Same pattern applies to resources and prompts

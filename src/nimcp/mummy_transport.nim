@@ -105,7 +105,7 @@ proc setupRoutes(transport: MummyTransport) =
   transport.router.post("/", proc(request: Request) {.gcsafe.} = transport.handleMcpRequest(request))
   transport.router.options("/", proc(request: Request) {.gcsafe.} = transport.handleMcpRequest(request))
 
-proc serve*(transport: MummyTransport) =
+proc start*(transport: MummyTransport) =
   ## Start the HTTP server and serve MCP requests
   transport.setupRoutes()
   transport.httpServer = newServer(transport.router)
@@ -118,7 +118,7 @@ proc serve*(transport: MummyTransport) =
 proc runHttp*(server: McpServer, port: int = 8080, host: string = "127.0.0.1", authConfig: AuthConfig = newAuthConfig()) =
   ## Convenience function to run an MCP server over HTTP
   let transport = newMummyTransport(server, port, host, authConfig)
-  transport.serve()
+  transport.start()
 
 # Clean API overloads that hide the casting  
 proc setTransport*(server: McpServer, transport: MummyTransport) =

@@ -264,9 +264,9 @@ This unified API makes it trivial to support multiple transport types! 🚀
 when isMainModule:
   let server = newMcpServer("websocket-notifications-demo", "1.0.0")
   
-  # Create WebSocket transport and store in server using clean type-safe API
+  # Create WebSocket transport and store in server
   let transport = newWebSocketTransport(server, port = 8080, host = "127.0.0.1")
-  server.setTransport(transport)  # Clean API - no casting needed!
+  server.setTransport(transport)
   
   # Register demonstration tools using context-aware handlers
   server.registerTool(McpTool(
@@ -349,4 +349,4 @@ when isMainModule:
   echo "🚀 Starting WebSocket server..."
   
   # Start the WebSocket transport
-  transport.serve()
+  server.run()
