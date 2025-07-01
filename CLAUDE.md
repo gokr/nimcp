@@ -8,23 +8,20 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Development Commands
 
-### Testing
+### Run all tests
 ```bash
-nimble test           # Run all tests
+nimble test
 ```
 
 ### Building Examples
 ```bash
 nim c examples/simple_server.nim      # Compile simple server example
-nim c examples/calculator_server.nim  # Compile calculator example
-nim c examples/sse_calculator.nim       # Compile SSE calculator example
-nim c -r examples/simple_server.nim   # Compile and run simple server
 nim c -r examples/sse_calculator.nim  # Compile and run SSE server
 ```
 
 ### Documentation
 ```bash
-nimble docs  # Generate HTML documentation in docs/ directory
+nimble docs
 ```
 
 ### Package Management
@@ -37,13 +34,20 @@ nimble build         # Build the package
 
 ### Core Modules Structure
 - `src/nimcp.nim` - Main module that exports the public API
-- `src/nimcp/types.nim` - Core MCP type definitions
+- `src/nimcp/types.nim` - Core MCP type definitions and polymorphic transport interface
 - `src/nimcp/protocol.nim` - JSON-RPC protocol implementation  
-- `src/nimcp/server.nim` - MCP server implementation that also includes the stdio transport
+- `src/nimcp/server.nim` - MCP server implementation with stdio transport and polymorphic transport support
 - `src/nimcp/mcpmacros.nim` - High-level macro API for easy server creation
+- `src/nimcp/context.nim` - Request context system for context-aware tools
+- `src/nimcp/schema.nim` - JSON schema utilities and validation
+- `src/nimcp/auth.nim` - Authentication and authorization framework
+- `src/nimcp/cors.nim` - CORS handling utilities
+- `src/nimcp/connection_pool.nim` - Connection management for transport layers
+- `src/nimcp/logging.nim` - Logging utilities and configuration
+- `src/nimcp/resource_templates.nim` - Resource template system
 - `src/nimcp/mummy_transport.nim` - HTTP transport implementation
-- `src/nimcp/websocket_transport.nim` - WebSocket transport implementation
-- `src/nimcp/sse_transport.nim` - SSE (Server-Sent Events) transport implementation
+- `src/nimcp/websocket_transport.nim` - WebSocket transport with polymorphic interface
+- `src/nimcp/sse_transport.nim` - SSE transport with polymorphic interface (deprecated but supported)
 
 ### Two API Styles
 
@@ -51,7 +55,7 @@ nimble build         # Build the package
 ```nim
 mcpServer("name", "1.0.0"):
   mcpTool:
-    proc add(a: float, b: float): Future[string] {.async.} =
+    proc add(a: float, b: float): string =
       ## Add two numbers together
       return fmt"Result: {a + b}"
 ```
@@ -60,15 +64,27 @@ mcpServer("name", "1.0.0"):
 ```nim
 let server = newMcpServer("name", "1.0.0")
 server.registerTool(tool, handler)
-await server.runStdio()  # Stdio transport
+server.runStdio()  # Stdio transport (synchronous)
+
+# Or with other transports:
+let sseTransport = newSseTransport(server, port = 8080)
+server.setTransport(sseTransport)
+sseTransport.start()
 ```
 
 ### Key Types
-- `McpServer` - Main server instance
+- `McpServer` - Main server instance with polymorphic transport support
 - `McpTool` - Tool definitions with JSON schemas
 - `McpResource` - Data resources accessible by URI
 - `McpPrompt` - Reusable prompt templates
 - `McpToolResult`, `McpResourceContents` - Response types
+- `McpRequestContext` - Request context for context-aware tools
+- `TransportInterface` - Base interface for polymorphic transport abstraction
+- `TransportKind` - Enum defining transport types (stdio, SSE, WebSocket, HTTP)
+- `McpTransport` - Union type for type-safe transport storage
+- `McpTransportCapabilities` - Set of transport capabilities (broadcast, events, etc.)
+- `AuthConfig` - Authentication configuration for HTTP/WebSocket/SSE transports
+- `ConnectionPool` - Generic connection management for transport layers
 
 ### Protocol Flow
 MCP servers communicate via JSON-RPC 2.0 over multiple transport options:
@@ -103,23 +119,46 @@ The server handles:
 - Server capability negotiation
 
 **Transport Examples**: 
-- stdio: `examples/calculator_server.nim`
-- HTTP: `examples/macro_mummy_calculator.nim` 
-- WebSocket: `examples/websocket_calculator.nim`
-- SSE: `examples/sse_calculator.nim`
+- Stdio: `examples/calculator_server.nim`, `examples/macro_calculator.nim`
+- HTTP: `examples/macro_mummy_calculator.nim`, `examples/mummy_calculator.nim`
+- WebSocket: `examples/websocket_calculator.nim`, `examples/authenticated_websocket_calculator.nim`
+- SSE: `examples/sse_calculator_manual.nim`, `examples/sse_notifications_demo.nim`
+- Polymorphic: `examples/polymorphic_transport_demo.nim`
+- Enhanced: `examples/enhanced_calculator.nim`, `examples/logging_example.nim`
 
 ## Dependencies
 - You find all dependencies in `nimcp.nimble`
+- Core dependencies: `nim >= 2.2.4`, `mummy` (HTTP/WebSocket server), `taskpools` (concurrency)
 
-## Examples
-- `examples/simple_server.nim` - Basic echo and time tools with info resource (stdio)
-- `examples/calculator_server.nim` - More complex calculator with multiple tools (manual API, stdio)
-- `examples/macro_calculator.nim` - Calculator using macro API with automatic introspection (stdio)
-- `examples/macro_mummy_calculator.nim` - HTTP-based calculator using macro API
-- `examples/websocket_calculator.nim` - WebSocket calculator with real-time communication (macro API)
-- `examples/authenticated_websocket_calculator.nim` - WebSocket calculator with Bearer token authentication
-- `examples/sse_calculator_manual.nim` - SSE calculator with Server-Sent Events transport (manual API)
-- `examples/sse_notifications_demo.nim` - Demonstrates SSE's key advantage: server-initiated events and real-time notifications
+## Polymorphic Transport System
+
+NimCP provides a powerful polymorphic transport abstraction that allows tools to work with any transport without specifying the transport type:
+
+```nim
+# Tools can access any transport polymorphically
+proc universalTool(ctx: McpRequestContext, args: JsonNode): McpToolResult =
+  let server = ctx.getServer()
+  let transport = server.getTransport()  # No type specification needed!
+  
+  if transport != nil:
+    # These calls work with SSE, WebSocket, or any future transport
+    transport.broadcastMessage(%*{"message": "Hello world"})
+    transport.sendEvent("notification", %*{"data": "test"})
+  
+  return McpToolResult(content: @[createTextContent("Success")])
+```
+
+**Transport Capabilities**:
+- `tcBroadcast` - Can broadcast messages to all connected clients
+- `tcEvents` - Can send custom events
+- `tcUnicast` - Can send messages to specific clients
+- `tcBidirectional` - Supports bidirectional communication
+
+**Polymorphic API**:
+- `server.getTransport(): TransportInterface` - Get transport without type specification
+- `transport.broadcastMessage(jsonData)` - Broadcast to all clients
+- `transport.sendEvent(eventType, data, target)` - Send custom events
+- `transport.getTransportKind(): TransportKind` - Get transport type for introspection
 
 ## Macro API Features
 The macro API automatically extracts:
@@ -192,27 +231,15 @@ proc getRequestTimeout*(server: McpServer): int = server.requestTimeout
 proc setRequestTimeout*(server: McpServer, timeout: int) = server.requestTimeout = timeout
 ```
 
-**When to Use Procedures**: Reserve procedures for complex operations with logic
-```nim
-# Appropriate: Complex logic, validation, or side effects
-proc setLogLevel*(server: McpServer, level: LogLevel) =
-  server.logger.setMinLevel(level)  # Calls method on nested object
 
-proc getServerStats*(server: McpServer): Table[string, JsonNode] =
-  # Complex computation combining multiple fields
-  result = initTable[string, JsonNode]()
-  result["serverName"] = %server.serverInfo.name
-  result["toolCount"] = %server.getRegisteredToolNames().len
-```
-
-**Public Field Declaration**: Use `*` to export fields that should be directly accessible
+**Public Field Declaration**: Use `*` to export fields that should be publicly accessible
 ```nim
 type
   McpServer* = ref object
-    serverInfo*: McpServerInfo      # Public - direct access allowed
-    requestTimeout*: int            # Public - direct access allowed
-    initialized*: bool              # Public - direct access allowed
-    internalState: SomePrivateType  # Private - no direct access
+    serverInfo*: McpServerInfo      # Public
+    requestTimeout*: int            # Public
+    initialized*: bool              # Public
+    internalState: SomePrivateType  # Private
 ```
 
 ### JSON Handling Style Guidelines
@@ -282,8 +309,47 @@ proc handleToolCall(params: JsonNode): JsonNode =
   let toolName = params["name"].getStr()
 ```
 
+## Testing and Coverage
+
+### Running Tests
+```bash
+nimble test           # Run all tests
+nimble coverage       # Run tests with coverage analysis
+nimble testcov <test> # Run specific test with detailed coverage
+nim c -r coverage_analysis.nim  # Generate coverage report
+```
+
+### Test Structure
+- 15 comprehensive test suites covering all modules
+- 100% module coverage achieved
+- Tests include: basic functionality, macro system, transport layers, authentication, error handling, edge cases, and polymorphic transport system
+
+## Context-Aware Tools
+
+NimCP supports both regular tools and context-aware tools:
+
+**Regular Tools** (simple functions):
+```nim
+mcpTool:
+  proc add(a: float, b: float): string =
+    return fmt"Result: {a + b}"
+```
+
+**Context-Aware Tools** (access to server and transport):
+```nim
+mcpTool:
+  proc notifyTool(ctx: McpRequestContext, args: JsonNode): McpToolResult =
+    let server = ctx.getServer()
+    let transport = server.getTransport()
+    # ... use transport for notifications
+    return McpToolResult(content: @[createTextContent("Sent")])
+```
+
 ## Development Best Practices
 - Always end todolists by running all the tests at the end to verify everything compiles and works
+- Use the polymorphic transport system for transport-agnostic tools
+- Prefer context-aware tools when you need access to the server or transport layer
+- Follow the macro API patterns for automatic schema generation
 
 ### Async and Concurrency Guidelines
 - **DO NOT USE `asyncdispatch`** - This project explicitly avoids asyncdispatch for concurrency
