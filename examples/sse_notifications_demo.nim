@@ -361,4 +361,4 @@ when isMainModule:
   echo "🚀 Starting server..."
   
   # Start the SSE transport
-  transport.start()
+  server.run(transport)

@@ -101,7 +101,7 @@ proc progressTool(ctx: McpRequestContext, args: JsonNode): McpToolResult {.gcsaf
   return McpToolResult(content: @[createTextContent(fmt"[MACRO] Operation '{operation}' completed with {steps} steps and real-time SSE updates")])
 
 # Create server using macro API
-mcpServer("sse-notifications-macro", "1.0.0"):
+let server = mcpServer("sse-notifications-macro", "1.0.0"):
   
   # Regular tools using macro API (no context needed)
   mcpTool:
@@ -253,8 +253,7 @@ This demonstrates how to **gradually enhance** macro-based servers with context-
   )
 
 when isMainModule:
-  # Get server instance from macro
-  let server = mcpServerInstance
+  # Use server instance created by macro
   
   # Create SSE transport and store in server using clean type-safe API
   let transport = newSseTransport(server, port = 8080, host = "127.0.0.1")
@@ -329,4 +328,4 @@ when isMainModule:
   echo "🚀 Starting mixed macro + context server..."
   
   # Start the SSE transport
-  transport.start()
+  server.run(transport)

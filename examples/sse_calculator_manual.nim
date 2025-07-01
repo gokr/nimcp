@@ -162,4 +162,4 @@ when isMainModule:
   
   # Create and start SSE transport
   let transport = newSseTransport(server, port = 8080, host = "127.0.0.1")
-  transport.start()
+  server.run(transport)

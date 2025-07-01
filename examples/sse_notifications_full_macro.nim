@@ -6,7 +6,7 @@ import ../src/nimcp
 import json, math, strformat, options, times, os
 
 # Create server using enhanced macro API with automatic context detection
-mcpServer("sse-notifications-full-macro", "1.0.0"):
+let server = mcpServer("sse-notifications-full-macro", "1.0.0"):
   
   # Regular tools (no context parameter) - auto-detected as regular tools
   mcpTool:
@@ -307,8 +307,7 @@ This is the **ideal developer experience** for MCP servers with SSE!
   )
 
 when isMainModule:
-  # Get server instance from macro
-  let server = mcpServerInstance
+  # Use server instance created by macro
   
   # Create SSE transport and store in server using clean type-safe API
   let transport = newSseTransport(server, port = 8080, host = "127.0.0.1")
@@ -356,4 +355,4 @@ when isMainModule:
   echo "🚀 Starting pure macro SSE server..."
   
   # Start the SSE transport
-  transport.start()
+  server.run(transport)
