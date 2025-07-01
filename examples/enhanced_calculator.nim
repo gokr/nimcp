@@ -8,7 +8,7 @@ import ../src/nimcp
 import json, tables, strutils, times, math, options
 
 # Create an enhanced MCP server
-let server = mcpServer("enhanced-calculator", "1.0.0"):
+mcpServer("enhanced-calculator", "1.0.0"):
   
   # Enable context logging for debugging
   mcpServerInstance.enableContextLogging = true
@@ -72,6 +72,6 @@ when isMainModule:
   echo ""
   
   try:
-    server.run()
+    runServer()
   except CatchableError as e:
     echo "Server error: " & e.msg

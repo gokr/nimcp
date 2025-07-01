@@ -4,7 +4,7 @@
 import ../src/nimcp
 import json, math, strformat
 
-let server = mcpServer("macro-calculator", "1.0.0"):
+mcpServer("macro-calculator", "1.0.0"):
   
   # This proc will be automatically converted to an MCP tool
   # Tool name: "add", schema generated from parameters, description from doc comment
@@ -67,4 +67,4 @@ when isMainModule:
   echo ""
   
   # Use stdio transport (synchronous, for CLI integration)
-  server.run()
+  runServer()

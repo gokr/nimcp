@@ -126,7 +126,8 @@ suite "HTTP Authentication Tests":
     
     proc runServer(params: tuple[server: McpServer, port: int, host: string, auth: auth.AuthConfig]) {.thread, gcsafe.} =
       try:
-        params.server.run(newMummyTransport(params.server, params.port, params.host, params.auth))
+        # Use the new HTTP run method directly
+        params.server.runHttp(params.port, params.host, params.auth)
       except CatchableError:
         discard # Server shutdown expected
     
