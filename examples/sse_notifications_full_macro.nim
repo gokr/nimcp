@@ -306,9 +306,7 @@ This is the **ideal developer experience** for MCP servers with SSE!
 """)]
   )
   
-# Create SSE transport and store in server
-let transport = newSseTransport(mcpServerInstance, port = 8080, host = "127.0.0.1")
-mcpServerInstance.setTransport(transport) 
+# Will use SSE transport - no manual setup needed with new system 
 
 # Register informational resource
 mcpServerInstance.registerResource(McpResource(
@@ -352,4 +350,4 @@ echo ""
 echo "🚀 Starting pure macro SSE server..."
 
 # Start the SSE transport
-mcpServerInstance.run()
+mcpServerInstance.runSse(8080, "127.0.0.1")

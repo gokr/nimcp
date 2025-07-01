@@ -246,10 +246,6 @@ not just respond to requests!
 when isMainModule:
   let server = newMcpServer("sse-notifications-demo", "1.0.0")
   
-  # Create SSE transport and store in server using clean type-safe API
-  let transport = newSseTransport(server, port = 8080, host = "127.0.0.1")
-  server.setTransport(transport)  # Clean API - no casting needed!
-  
   # Register demonstration tools using context-aware handlers
   server.registerTool(McpTool(
     name: "add",
@@ -361,4 +357,4 @@ when isMainModule:
   echo "🚀 Starting server..."
   
   # Start the SSE transport
-  server.run(transport)
+  server.runSse(8080, "127.0.0.1")
