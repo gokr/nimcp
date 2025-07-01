@@ -1,10 +1,10 @@
 ## Macro-based calculator example with HTTP transport
 ## Demonstrates automatic tool generation from proc signatures
 
-import ../src/nimcp/mcpmacros
+import ../src/nimcp
 import json, math, strformat
 
-mcpServer("macro-calculator", "1.0.0"):
+let server = mcpServer("macro-calculator", "1.0.0"):
   
   # This proc will be automatically converted to an MCP tool
   # Tool name: "add", schema generated from parameters, description from doc comment
@@ -62,20 +62,9 @@ mcpServer("macro-calculator", "1.0.0"):
         return fmt"Result: {res}"
 
 when isMainModule:
-  echo "Starting Macro Calculator MCP Server with HTTP transport..."
-  echo "Test with curl:"
-  echo """curl -X POST http://127.0.0.1:8080 \"""
-  echo """  -H "Content-Type: application/json" \"""
-  echo """  -d '{"jsonrpc":"2.0","id":"1","method":"initialize","params":{"protocolVersion":"2024-11-05","capabilities":{},"clientInfo":{"name":"test","version":"1.0.0"}}}'"""
-  echo ""
-  echo """curl -X POST http://127.0.0.1:8080 \"""
-  echo """  -H "Content-Type: application/json" \"""
-  echo """  -d '{"jsonrpc":"2.0","method":"notifications/initialized"}'"""
-  echo ""
-  echo """curl -X POST http://127.0.0.1:8080 \"""
-  echo """  -H "Content-Type: application/json" \"""
-  echo """  -d '{"jsonrpc":"2.0","id":"2","method":"tools/list","params":{}}'"""
+  echo "Starting Macro Calculator MCP Server..."
+  echo "This example demonstrates the macro API with stdio transport"
   echo ""
   
-  # Use HTTP transport
-  mcpServerInstance.runHttp(8080, "127.0.0.1")
+  # Use stdio transport (synchronous, for CLI integration)
+  server.run()
