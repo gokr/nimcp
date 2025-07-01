@@ -18,7 +18,7 @@ task docs, "Generate documentation":
 
 task test, "Run all tests":
   exec "nimble install -d"
-  exec "testament --colors:off --verbose pattern 'tests/test_*.nim'"
+  exec "testament --colors:on pattern 'tests/test_*.nim'"
 
 task coverage, "Run tests with coverage analysis":
   echo "🧪 Running tests with coverage analysis..."
