@@ -64,12 +64,12 @@ mcpServer("name", "1.0.0"):
 ```nim
 let server = newMcpServer("name", "1.0.0")
 server.registerTool(tool, handler)
-server.runStdio()  # Stdio transport (synchronous)
+server.run()  # Stdio transport (synchronous)
 
 # Or with other transports:
 let sseTransport = newSseTransport(server, port = 8080)
 server.setTransport(sseTransport)
-sseTransport.start()
+server.run()
 ```
 
 ### Key Types
@@ -173,6 +173,11 @@ The macro API automatically extracts:
 ### Variable Naming
 - Do not introduce a local variable called "result" since Nim has such a variable already defined that represents the return value
 - Always use doc comment with double "##" right below the signature for Nim procs, not above
+
+### Type System Preferences
+- **Prefer generics over methods**: Use generic procedures with type parameters rather than method dispatch when possible
+- Generics provide better compile-time type safety and performance
+- Methods should be used sparingly, primarily for polymorphic behavior that truly requires runtime dispatch
 
 ### Result Variable and Return Statement Style
 Follow these patterns for idiomatic Nim code:
@@ -340,6 +345,66 @@ mcpTool:
     # ... use transport for notifications
     return McpToolResult(content: @[createTextContent("Sent")])
 ```
+
+## Transport Architecture Simplification Plan
+
+The current transport system is overly complex with multiple abstraction layers. Here's a plan to simplify it:
+
+### Current Issues
+1. **setTransport() + run() bug**: `server.setTransport(transport); server.run()` ignores the transport and uses stdio
+2. **Complex pointer casting**: Uses unsafe `pointer` types to break circular dependencies
+3. **Multiple abstraction layers**: McpTransport union + TransportInterface inheritance + pointer casting
+4. **Inconsistent API**: Different patterns for different operations
+
+### Proposed Solution: Pure Object Variants with Generics
+
+**Option 1: Unified Object Variant (Recommended)**
+```nim
+type
+  McpTransport* = object
+    case kind*: TransportKind
+    of tkStdio:
+      discard
+    of tkSSE:
+      ssePort*: int
+      sseHost*: string
+      sseAuth*: AuthConfig
+    of tkWebSocket:
+      wsPort*: int
+      wsHost*: string
+      wsAuth*: AuthConfig
+    of tkHttp:
+      httpPort*: int
+      httpHost*: string
+      httpAuth*: AuthConfig
+```
+
+**Benefits:**
+- Single type, no pointers, no casting
+- Type-safe access via pattern matching
+- No circular dependencies
+- All transport data in one place
+- Fix setTransport() + run() issue naturally
+
+**Option 2: Generic Constraints (Alternative)**
+```nim
+type
+  TransportTrait = concept t
+    t.start()
+    t.broadcastMessage(JsonNode)
+    t.getTransportKind() is TransportKind
+
+proc run*[T: TransportTrait](server: McpServer, transport: T) =
+  transport.start()
+```
+
+### Implementation Steps
+1. Replace McpTransport union with configuration-only variant
+2. Eliminate TransportInterface inheritance
+3. Use pattern matching for transport operations
+4. Fix run() method to check server.transport first
+5. Remove all pointer casting
+6. Update all transport implementations
 
 ## Development Best Practices
 - Always end todolists by running all the tests at the end to verify everything compiles and works
