@@ -309,19 +309,15 @@ proc handleToolCall(params: JsonNode): JsonNode =
   let toolName = params["name"].getStr()
 ```
 
-## Testing and Coverage
+## Testing
 
 ### Running Tests
 ```bash
 nimble test           # Run all tests
-nimble coverage       # Run tests with coverage analysis
-nimble testcov <test> # Run specific test with detailed coverage
-nim c -r coverage_analysis.nim  # Generate coverage report
 ```
 
 ### Test Structure
 - 15 comprehensive test suites covering all modules
-- 100% module coverage achieved
 - Tests include: basic functionality, macro system, transport layers, authentication, error handling, edge cases, and polymorphic transport system
 
 ## Context-Aware Tools
