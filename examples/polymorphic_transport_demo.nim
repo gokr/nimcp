@@ -450,7 +450,7 @@ when isMainModule:
     of tkWebSocket:
       let wsTransport = server.getTransport(WebSocketTransport)
       if wsTransport != nil:
-        wsTransport.serve()
+        wsTransport.start()
     else:
       echo "❌ Unknown transport type"
   else:
