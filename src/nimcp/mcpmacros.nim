@@ -39,15 +39,35 @@ proc nimTypeToJsonSchema(nimType: NimNode): JsonNode =
     result = newJObject()
     result["type"] = newJString("string")  # Default fallback
 
-# Extract documentation from proc node
-proc extractDocComment(procNode: NimNode): string =
-  for child in procNode:
-    if child.kind == nnkCommentStmt:
-      return child.strVal.strip()
-  return ""
+# Extract documentation and parameter descriptions from proc node
+proc extractDocComments(procNode: NimNode): (string, Table[string, string]) =
+  var description = ""
+  var paramDescriptions = initTable[string, string]()
+  
+  # Look for doc comments in the proc body (they appear as the first statements)
+  let body = procNode[^1]  # Last element is the body
+  if body.kind == nnkStmtList and body.len > 0:
+    for stmt in body:
+      if stmt.kind == nnkCommentStmt:
+        let docText = stmt.strVal.strip()
+        let lines = docText.splitLines()
+        for line in lines:
+          let cleanLine = line.strip()
+          if cleanLine.startsWith("-"):
+            # Parameter description line
+            let parts = cleanLine[1..^1].split(":", 1)
+            if parts.len == 2:
+              let paramName = parts[0].strip()
+              paramDescriptions[paramName] = parts[1].strip()
+          elif cleanLine != "" and description == "":
+            # Main description line (first non-empty, non-parameter line)
+            description = cleanLine
+        break  # Only process the first comment block
+  
+  return (description, paramDescriptions)
 
-# Generate JSON schema from proc parameters
-proc generateInputSchema(params: NimNode): JsonNode =
+# Generate JSON schema from proc parameters with descriptions
+proc generateInputSchema(params: NimNode, paramDescs: Table[string, string]): JsonNode =
   var properties = newJObject()
   var required = newJArray()
   
@@ -59,7 +79,10 @@ proc generateInputSchema(params: NimNode): JsonNode =
       for j in 0..<param.len-2:  # All except type and default value
         let paramName = $param[j]
         if paramName != "":
-          properties[paramName] = nimTypeToJsonSchema(paramType)
+          var prop = nimTypeToJsonSchema(paramType)
+          if paramName in paramDescs:
+            prop["description"] = newJString(paramDescs[paramName])
+          properties[paramName] = prop
           required.add(newJString(paramName))
   
   result = newJObject()
@@ -67,8 +90,8 @@ proc generateInputSchema(params: NimNode): JsonNode =
   result["properties"] = properties
   result["required"] = required
 
-# Generate JSON schema from proc parameters, skipping first parameter (for context-aware tools)
-proc generateInputSchemaSkipFirst(params: NimNode): JsonNode =
+# Generate JSON schema from proc parameters with descriptions, skipping first parameter
+proc generateInputSchemaSkipFirst(params: NimNode, paramDescs: Table[string, string]): JsonNode =
   var properties = newJObject()
   var required = newJArray()
   
@@ -80,7 +103,10 @@ proc generateInputSchemaSkipFirst(params: NimNode): JsonNode =
       for j in 0..<param.len-2:  # All except type and default value
         let paramName = $param[j]
         if paramName != "":
-          properties[paramName] = nimTypeToJsonSchema(paramType)
+          var prop = nimTypeToJsonSchema(paramType)
+          if paramName in paramDescs:
+            prop["description"] = newJString(paramDescs[paramName])
+          properties[paramName] = prop
           required.add(newJString(paramName))
   
   result = newJObject()
@@ -107,9 +133,9 @@ macro mcpTool*(procDef: untyped): untyped =
   # Extract tool name from proc name
   let toolName = $procName
   
-  # Extract description from doc comment - get first line only
-  let docComment = extractDocComment(actualProcDef).splitLines()[0].strip()
-  let description = if docComment.len > 0: docComment else: "Auto-generated tool: " & toolName
+  # Extract doc comments from the proc definition
+  let (description, paramDescs) = extractDocComments(actualProcDef)
+  let finalDescription = if description.len > 0: description else: "Auto-generated tool: " & toolName
   
   # Check if this is a context-aware tool by examining first parameter
   var isContextAware = false
@@ -123,10 +149,10 @@ macro mcpTool*(procDef: untyped): untyped =
         contextParamName = $firstParam[0]
   
   # Generate input schema from parameters (skip context parameter for schema)
-  let inputSchema = if isContextAware: 
-                      generateInputSchemaSkipFirst(params) 
-                    else: 
-                      generateInputSchema(params)
+  let inputSchema = if isContextAware:
+                      generateInputSchemaSkipFirst(params, paramDescs)
+                    else:
+                      generateInputSchema(params, paramDescs)
   
   # Generate the wrapper proc name to avoid conflicts
   let wrapperName = ident("tool_" & toolName & "_wrapper")
@@ -141,7 +167,7 @@ macro mcpTool*(procDef: untyped): untyped =
   result.add(quote do:
     let `toolIdent` = McpTool(
       name: `toolName`,
-      description: some(`description`),
+      description: some(`finalDescription`),
       inputSchema: parseJson(`schemaStr`)
     )
   )
@@ -301,8 +327,8 @@ template mcpServer*(name: string, version: string, body: untyped): untyped =
                         newAuthConfig()
       mcpServerInstance.runWebSocket(transport.wsPort, transport.wsHost, authConfig)
   
-  when isMainModule:
-    runServer()
+  #when isMainModule:
+  #  runServer()
 
 
 # Simple resource registration template  

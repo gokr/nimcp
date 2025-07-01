@@ -4,17 +4,13 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-**NimCP** is a Nim library for creating Model Context Protocol (MCP) servers using macro-based APIs. It implements the MCP specification with JSON-RPC 2.0 over stdio, allowing integration with LLM applications.
+**NimCP** is a Nim library for creating Model Context Protocol (MCP) servers using macro-based APIs. It implements the MCP specification with JSON-RPC 2.0 over stdio, websockets and SSE, allowing integration with LLM applications.
 
 ## Development Commands
 
 ### Testing
 ```bash
-nimble test           # Run all tests (basic, simple_server, calculator_server)
-nim c -r tests/test_basic.nim           # Run basic MCP server tests
-nim c -r tests/test_simple_server.nim   # Run simple_server functionality tests  
-nim c -r tests/test_calculator_server.nim # Run calculator server tests
-nim c -r tests/test_sse_transport.nim   # Run SSE transport tests
+nimble test           # Run all tests
 ```
 
 ### Building Examples
