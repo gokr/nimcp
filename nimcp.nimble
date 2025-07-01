@@ -7,10 +7,10 @@ srcDir        = "src"
 
 # Dependencies
 requires "nim >= 2.2.4"
-requires "https://github.com/gokr/mummy"
+requires "https://github.com/gokr/mummyx"
 requires "taskpools"
 
-import strformat
+import strformat, os, strutils
 
 # Tasks
 task docs, "Generate documentation":
@@ -19,5 +19,45 @@ task docs, "Generate documentation":
 task test, "Run all tests":
   exec "nimble install -d"
   exec "testament --colors:on pattern 'tests/test_*.nim'"
+
+task examples, "Check that all examples compile":
+  echo "🔧 Checking all examples compile properly..."
+  exec "nimble install -d"
+  
+  var failed: seq[string] = @[]
+  var passed: seq[string] = @[]
+  
+  # Find all .nim files in examples directory
+  for file in walkDirRec("examples/"):
+    if file.endsWith(".nim"):
+      let exampleName = file.replace("examples/", "").replace(".nim", "")
+      echo fmt"📝 Checking {exampleName}..."
+      
+      try:
+        exec fmt"nim check {file}"
+        echo fmt"✅ {exampleName} - OK"
+        passed.add(exampleName)
+      except:
+        echo fmt"❌ {exampleName} - FAILED"
+        failed.add(exampleName)
+  
+  echo ""
+  echo "========================================="
+  echo "Examples Compilation Summary"
+  echo "========================================="
+  echo fmt"✅ Passed: {passed.len}"
+  for p in passed:
+    echo fmt"   ✓ {p}"
+  
+  if failed.len > 0:
+    echo fmt"❌ Failed: {failed.len}"
+    for f in failed:
+      echo fmt"   ✗ {f}"
+    echo ""
+    echo "Some examples failed to compile!"
+    quit(1)
+  else:
+    echo ""
+    echo "🎉 All examples compile successfully!"
 
 

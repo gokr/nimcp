@@ -45,9 +45,12 @@ nimble build         # Build the package
 - `src/nimcp/connection_pool.nim` - Connection management for transport layers
 - `src/nimcp/logging.nim` - Logging utilities and configuration
 - `src/nimcp/resource_templates.nim` - Resource template system
-- `src/nimcp/mummy_transport.nim` - HTTP transport implementation
+- `src/nimcp/mummy_transport.nim` - HTTP transport implementation with MCP Streamable HTTP support
 - `src/nimcp/websocket_transport.nim` - WebSocket transport with polymorphic interface
 - `src/nimcp/sse_transport.nim` - SSE transport with polymorphic interface (deprecated but supported)
+
+### Design Documentation
+- `design/STREAMABLE.md` - Streamable HTTP transport design and implementation notes
 
 ### Two API Styles
 

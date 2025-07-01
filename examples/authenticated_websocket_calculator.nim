@@ -2,6 +2,7 @@
 ## Demonstrates WebSocket transport with Bearer token authentication
 
 import ../src/nimcp
+import ../src/nimcp/auth
 import json, math, strformat
 
 # Simple token validator for demonstration
@@ -18,7 +19,7 @@ proc validateToken(token: string): bool {.gcsafe.} =
     echo "Invalid token: ", token
     return false
 
-let server = mcpServer("authenticated-websocket-calculator", "1.0.0"):
+mcpServer("authenticated-websocket-calculator", "1.0.0"):
   
   mcpTool:
     proc add(a: float, b: float): string =
@@ -84,6 +85,5 @@ ws.onmessage = function(event) {
   echo """{"jsonrpc":"2.0","id":"3","method":"tools/call","params":{"name":"power","arguments":{"base":2.0,"exponent":8.0}}}"""
   echo ""
   
-  # Use WebSocket transport with authentication
-  let authConfig = newAuthConfig(validateToken, false)
-  server.runWebSocket(8081, "127.0.0.1", authConfig)
+  # Use WebSocket transport with authentication  
+  runServer(WebSocketTransportAuth(8081, "127.0.0.1", false, validateToken))

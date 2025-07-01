@@ -264,4 +264,9 @@ proc getTransport*(server: McpServer, transportType: typedesc[SseTransport]): Ss
   else:
     return nil
 
+proc runSse*(server: McpServer, port: int = 8080, host: string = "127.0.0.1", authConfig: AuthConfig = newAuthConfig()) =
+  ## Convenience function to run an MCP server over SSE transport
+  let transport = newSseTransport(server, port, host, authConfig)
+  transport.start()
+
 

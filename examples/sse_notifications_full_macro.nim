@@ -6,7 +6,7 @@ import ../src/nimcp
 import json, math, strformat, options, times, os
 
 # Create server using enhanced macro API with automatic context detection
-let server = mcpServer("sse-notifications-full-macro", "1.0.0"):
+mcpServer("sse-notifications-full-macro", "1.0.0"):
   
   # Regular tools (no context parameter) - auto-detected as regular tools
   mcpTool:
@@ -305,54 +305,51 @@ The macro system automatically:
 This is the **ideal developer experience** for MCP servers with SSE!
 """)]
   )
+  
+# Create SSE transport and store in server
+let transport = newSseTransport(mcpServerInstance, port = 8080, host = "127.0.0.1")
+mcpServerInstance.setTransport(transport) 
 
-when isMainModule:
-  # Use server instance created by macro
-  
-  # Create SSE transport and store in server using clean type-safe API
-  let transport = newSseTransport(server, port = 8080, host = "127.0.0.1")
-  server.setTransport(transport)  # Clean API - no casting needed!
-  
-  # Register informational resource
-  server.registerResource(McpResource(
-    uri: "sse://full-macro-info",
-    name: "Full Macro SSE Demo Info",
-    description: some("Information about pure macro API with automatic context detection"),
-    mimeType: some("text/markdown")
-  ), serverInfoResource)
+# Register informational resource
+mcpServerInstance.registerResource(McpResource(
+  uri: "sse://full-macro-info",
+  name: "Full Macro SSE Demo Info",
+  description: some("Information about pure macro API with automatic context detection"),
+  mimeType: some("text/markdown")
+), serverInfoResource)
 
-  echo "🎯 SSE NOTIFICATIONS WITH FULL MACRO API"
-  echo "========================================"
-  echo ""
-  echo "🔥 This demo showcases PURE MACRO architecture:"
-  echo "   ✨ 100% macro-based tool definitions"
-  echo "   🔍 Automatic context detection"
-  echo "   📦 Zero manual registration needed"
-  echo ""
-  echo "🌟 Enhanced Macro Features:"
-  echo "   ✅ Auto-detects McpRequestContext parameter"
-  echo "   ✅ Generates context-aware vs regular wrappers"
-  echo "   ✅ Uses registerToolWithContext() automatically"
-  echo "   ✅ Excludes context from JSON schema"
-  echo ""
-  echo "🚀 All Tool Types:"
-  echo "   📱 Regular: add, multiply, factorial"
-  echo "   📡 Context-Aware: notify, progress, broadcast"
-  echo ""
-  echo "🌐 Demo Endpoints:"
-  echo "   📨 SSE Stream: http://127.0.0.1:8080/sse"
-  echo "   📮 Messages: http://127.0.0.1:8080/messages"
-  echo ""
-  echo "🎉 Key Innovation:"
-  echo "   Same 'mcpTool' macro works for both regular and context-aware tools!"
-  echo "   The macro automatically detects tool type and handles registration."
-  echo ""
-  echo "🧪 Test both types:"
-  echo "   • Call 'add' for simple macro functionality"
-  echo "   • Call 'notify' for SSE real-time events"
-  echo "   • Watch SSE stream to see live notifications!"
-  echo ""
-  echo "🚀 Starting pure macro SSE server..."
-  
-  # Start the SSE transport
-  server.run(transport)
+echo "🎯 SSE NOTIFICATIONS WITH FULL MACRO API"
+echo "========================================"
+echo ""
+echo "🔥 This demo showcases PURE MACRO architecture:"
+echo "   ✨ 100% macro-based tool definitions"
+echo "   🔍 Automatic context detection"
+echo "   📦 Zero manual registration needed"
+echo ""
+echo "🌟 Enhanced Macro Features:"
+echo "   ✅ Auto-detects McpRequestContext parameter"
+echo "   ✅ Generates context-aware vs regular wrappers"
+echo "   ✅ Uses registerToolWithContext() automatically"
+echo "   ✅ Excludes context from JSON schema"
+echo ""
+echo "🚀 All Tool Types:"
+echo "   📱 Regular: add, multiply, factorial"
+echo "   📡 Context-Aware: notify, progress, broadcast"
+echo ""
+echo "🌐 Demo Endpoints:"
+echo "   📨 SSE Stream: http://127.0.0.1:8080/sse"
+echo "   📮 Messages: http://127.0.0.1:8080/messages"
+echo ""
+echo "🎉 Key Innovation:"
+echo "   Same 'mcpTool' macro works for both regular and context-aware tools!"
+echo "   The macro automatically detects tool type and handles registration."
+echo ""
+echo "🧪 Test both types:"
+echo "   • Call 'add' for simple macro functionality"
+echo "   • Call 'notify' for SSE real-time events"
+echo "   • Watch SSE stream to see live notifications!"
+echo ""
+echo "🚀 Starting pure macro SSE server..."
+
+# Start the SSE transport
+mcpServerInstance.run()
