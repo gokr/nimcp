@@ -82,7 +82,7 @@ when isMainModule:
   echo "6. Simulating tool execution:"
   try:
     let args = %*{"input": "test_input"}
-    let result = exampleTool(ctx, args)
+    discard exampleTool(ctx, args)
     echo "✓ Tool executed successfully"
   except Exception as e:
     echo "✗ Tool execution failed: " & e.msg

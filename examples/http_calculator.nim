@@ -1,10 +1,10 @@
-## Macro-based Mummy HTTP calculator example
+## HTTP calculator using macro API  
 ## Demonstrates automatic tool generation with HTTP transport
 
 import ../src/nimcp
 import json, math, strformat
 
-mcpServer("macro-mummy-calculator", "1.0.0"):
+let server = mcpServer("http-calculator", "1.0.0"):
   
   # This proc will be automatically converted to an MCP tool
   # Tool name: "add", schema generated from parameters, description from doc comment
@@ -61,18 +61,8 @@ mcpServer("macro-mummy-calculator", "1.0.0"):
           res *= i
         return fmt"Result: {res}"
 
-echo "Starting Macro Mummy Calculator MCP Server..."
-echo "This server uses macros for automatic tool generation and HTTP transport"
-echo ""
-echo "Test with curl:"
-echo """curl -X POST http://127.0.0.1:8080 \"""
-echo """  -H "Content-Type: application/json" \"""
-echo """  -d '{"jsonrpc":"2.0","id":"1","method":"tools/list","params":{}}'"""
-echo ""
-echo """curl -X POST http://127.0.0.1:8080 \"""
-echo """  -H "Content-Type: application/json" \"""
-echo """  -d '{"jsonrpc":"2.0","id":"2","method":"tools/call","params":{"name":"add","arguments":{"a":5.5,"b":3.2}}}'"""
-echo ""
-
-# Use the unified transport API with HTTP configuration  
-currentMcpServer.runHttp(8080, "127.0.0.1")
+when isMainModule:
+  # HTTP transport - serves JSON-RPC over HTTP at http://127.0.0.1:8080
+  # Test with: curl -X POST http://127.0.0.1:8080 -H "Content-Type: application/json" -d '{"jsonrpc":"2.0","id":"1","method":"tools/list","params":{}}'
+  let transport = newMummyTransport(8080, "127.0.0.1")
+  transport.serve(server)

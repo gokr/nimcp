@@ -4,9 +4,10 @@ import tables
 import options
 import ../src/nimcp/mcpmacros
 import ../src/nimcp/types
+import ../src/nimcp/server
 
-# Create a test server instance using the mcpServer template
-mcpServer("test-server", "1.0.0"):
+# Create a test server instance using the new mcpServer macro
+let testServer = mcpServer("test-server", "1.0.0"):
   # Test proc with doc comments
   mcpTool:
     proc testTool(param1: int, param2: string): string =
@@ -18,7 +19,7 @@ mcpServer("test-server", "1.0.0"):
 # Test case for doc comment extraction
 test "mcpTool macro extracts doc comments correctly":
   # Get the registered tool
-  let tool = currentMcpServer.tools["testTool"]
+  let tool = testServer.tools["testTool"]
   
   # Verify tool description
   check tool.description.isSome
@@ -37,7 +38,7 @@ test "mcpTool macro extracts doc comments correctly":
 
 # Test case for tool registration
 test "mcpTool macro registers tools correctly":
-  check "testTool" in currentMcpServer.tools
-  let tool = currentMcpServer.tools["testTool"]
+  check "testTool" in testServer.tools
+  let tool = testServer.tools["testTool"]
   check tool.name == "testTool"
   check tool.description.get == "Test tool description"

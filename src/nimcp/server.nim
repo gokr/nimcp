@@ -36,6 +36,7 @@ type
     requestTimeout*: int  # milliseconds
     enableContextLogging*: bool
     logger*: Logger
+    transport*: Option[McpTransport]  # Type-safe transport storage
     customData*: Table[string, pointer]  # Custom data storage for other use cases
 
   # Server composition types (moved from types.nim to avoid circular dependency)
@@ -75,6 +76,7 @@ proc newMcpServer*(name: string, version: string, numThreads: int = 0): McpServe
   result.enableContextLogging = false
   result.middleware = @[]
   result.resourceTemplates = newResourceTemplateRegistry()
+  result.transport = none(McpTransport)  # Initialize with no transport
   result.customData = initTable[string, pointer]()
   
   # Initialize logging with server-specific component name
@@ -155,6 +157,68 @@ proc shutdown*(server: McpServer) =
   cleanupExpiredContexts()
   
   server.logger.info("MCP server shutdown complete")
+
+# Transport helper methods
+proc getTransportKind*(server: McpServer): TransportKind =
+  ## Get the kind of currently active transport
+  if server.transport.isSome:
+    return server.transport.get().kind
+  else:
+    return tkNone
+
+proc hasTransport*(server: McpServer): bool =
+  ## Check if server has an active transport
+  return server.transport.isSome
+
+proc clearTransport*(server: McpServer) =
+  ## Clear the active transport
+  server.transport = none(McpTransport)
+
+# Transport configuration methods
+proc setSseTransport*(server: McpServer, port: int = 8080, host: string = "127.0.0.1", authConfig: pointer = nil, sseEndpoint: string = "/sse", messageEndpoint: string = "/messages") =
+  ## Set SSE transport with configuration
+  let sseData = SseTransportData(
+    port: port,
+    host: host,
+    authConfig: authConfig,
+    connectionPool: nil,
+    sseEndpoint: sseEndpoint,
+    messageEndpoint: messageEndpoint
+  )
+  server.transport = some(McpTransport(
+    kind: tkSSE,
+    capabilities: {tcBroadcast, tcEvents, tcUnicast},
+    sseData: sseData
+  ))
+
+proc setWebSocketTransport*(server: McpServer, port: int = 8080, host: string = "127.0.0.1", authConfig: pointer = nil) =
+  ## Set WebSocket transport with configuration
+  let wsData = WebSocketTransportData(
+    port: port,
+    host: host,
+    authConfig: authConfig,
+    connectionPool: nil
+  )
+  server.transport = some(McpTransport(
+    kind: tkWebSocket,
+    capabilities: {tcBroadcast, tcEvents, tcUnicast, tcBidirectional},
+    wsData: wsData
+  ))
+
+proc setHttpTransport*(server: McpServer, port: int = 8080, host: string = "127.0.0.1", authConfig: pointer = nil, allowedOrigins: seq[string] = @[]) =
+  ## Set HTTP transport with configuration
+  let httpData = HttpTransportData(
+    port: port,
+    host: host,
+    authConfig: authConfig,
+    allowedOrigins: allowedOrigins,
+    connections: nil
+  )
+  server.transport = some(McpTransport(
+    kind: tkHttp,
+    capabilities: {tcBroadcast, tcEvents},
+    httpData: httpData
+  ))
 
 # Helper functions to reduce registration code duplication
 proc validateRegistration(itemType: string, itemKey: string) =

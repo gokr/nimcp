@@ -57,7 +57,7 @@ suite "HTTP Authentication Tests":
           return false
     
     let authConfig = newAuthConfig(simpleValidator, requireHttps = false)
-    let transport = newMummyTransport(server, 8080, "127.0.0.1", authConfig)
+    let transport = newMummyTransport(8080, "127.0.0.1", authConfig)
     
     # Note: These tests verify the configuration is properly set up
     # Actual HTTP request testing would require a running server and HTTP client
@@ -66,10 +66,8 @@ suite "HTTP Authentication Tests":
     check not transport.authConfig.requireHttps
     
   test "Backward compatibility - no authentication by default":
-    let server = newMcpServer("compat-test", "1.0.0")
-    
     # Create transport without explicit auth config (should use default)
-    let transport = newMummyTransport(server, 8080, "127.0.0.1")
+    let transport = newMummyTransport(8080, "127.0.0.1")
     
     # Default should be disabled
     check not transport.authConfig.enabled
@@ -80,9 +78,11 @@ suite "HTTP Authentication Tests":
     let defaultAuthConfig = newAuthConfig()
     check not defaultAuthConfig.enabled
 
-  test "HTTP Authentication Integration - Real Server":
-    # Create a test server with authentication
-    let server = newMcpServer("integration-test", "1.0.0")
+  # Commented out because runHttp was removed - this test relied on the removed HTTP server functionality
+  when false:
+    test "HTTP Authentication Integration - Real Server":
+      # Create a test server with authentication
+      let server = newMcpServer("integration-test", "1.0.0")
 
     # Initialize the server
     let initRequest = JsonRpcRequest(

@@ -104,19 +104,19 @@ when isMainModule:
   # Test user template
   let userMatch = templates.findTemplateWithContext("/users/123")
   if userMatch.isSome:
-    let (resourceTemplate, params, handler) = userMatch.get()
+    let (resourceTemplate, params, _) = userMatch.get()
     echo "✓ Matched /users/123 -> template: " & resourceTemplate.uriTemplate & ", params: " & $params
   
   # Test file template
   let fileMatch = templates.findTemplateWithContext("/files/config.json")
   if fileMatch.isSome:
-    let (resourceTemplate, params, handler) = fileMatch.get()
+    let (resourceTemplate, params, _) = fileMatch.get()
     echo "✓ Matched /files/config.json -> template: " & resourceTemplate.uriTemplate & ", params: " & $params
   
   # Test project template
   let projectMatch = templates.findTemplateWithContext("/projects/abc/issues/456")
   if projectMatch.isSome:
-    let (resourceTemplate, params, handler) = projectMatch.get()
+    let (resourceTemplate, params, _) = projectMatch.get()
     echo "✓ Matched /projects/abc/issues/456 -> template: " & resourceTemplate.uriTemplate & ", params: " & $params
   
   echo ""

@@ -1,7 +1,7 @@
 ## Tests for SSE transport functionality
 ## Verifies Server-Sent Events transport according to MCP specification
 
-import unittest, json, options, tables, httpclient, os, strformat, strutils, times
+import unittest, json, options, strformat
 import ../src/nimcp
 import ../src/nimcp/auth  # Import shared authentication module
 
@@ -12,7 +12,7 @@ suite "SSE Transport Tests":
     let server = newMcpServer("sse-test", "1.0.0")
     
     # Test default configuration
-    let defaultTransport = newSseTransport(server)
+    let defaultTransport = newSseTransport()
     check defaultTransport.port == 8080
     check defaultTransport.host == "127.0.0.1"
     check defaultTransport.sseEndpoint == "/sse"
@@ -25,7 +25,6 @@ suite "SSE Transport Tests":
     
     let authConfig = auth.newAuthConfig(testValidator, requireHttps = false)
     let customTransport = newSseTransport(
-      server, 
       port = 9090, 
       host = "0.0.0.0",
       authConfig = authConfig,
@@ -40,7 +39,7 @@ suite "SSE Transport Tests":
     
   test "SSE connection management":
     let server = newMcpServer("sse-connection-test", "1.0.0")
-    let transport = newSseTransport(server, port = 8081)
+    let transport = newSseTransport(port = 8081)
     
     # Test initial state
     check transport.getActiveConnectionCount() == 0
@@ -56,7 +55,7 @@ suite "SSE Transport Tests":
       return token in ["token1", "token2", "valid-token"]
     
     let authConfig = auth.newAuthConfig(testValidator, requireHttps = false)
-    let transport = newSseTransport(server, port = 8082, authConfig = authConfig)
+    let transport = newSseTransport(port = 8082, authConfig = authConfig)
     
     # Authentication is tested through the actual server endpoints
     # This would require complex HTTP client testing
@@ -65,7 +64,7 @@ suite "SSE Transport Tests":
     
   test "CORS functionality":
     let server = newMcpServer("sse-cors-test", "1.0.0") 
-    let transport = newSseTransport(server, port = 8083)
+    let transport = newSseTransport(port = 8083)
     
     # CORS headers are added by the transport implementation
     # Testing would require actual HTTP requests to verify headers
@@ -114,7 +113,7 @@ suite "SSE Transport Integration":
     server.registerResource(mathResource, mathConstantsHandler)
     
     # Create SSE transport
-    let transport = newSseTransport(server, port = 8084)
+    let transport = newSseTransport(port = 8084)
     
     # Verify server has tools and resources
     check server.getRegisteredToolNames().len == 1
@@ -147,10 +146,10 @@ when false:
       server.registerTool(echoTool, echoHandler)
       
       # Start SSE transport in background
-      let transport = newSseTransport(server, port = 8085)
+      let transport = newSseTransport(port = 8085)
       
       proc startServer() {.thread.} =
-        transport.start()
+        transport.serve(server)
       
       var serverThread: Thread[void]
       createThread(serverThread, startServer)
@@ -215,7 +214,7 @@ suite "SSE Message Format Tests":
   test "SSE event formatting":
     # Test SSE event structure (this would be integration tested in practice)
     let server = newMcpServer("sse-event-test", "1.0.0")
-    let transport = newSseTransport(server, port = 8086)
+    let transport = newSseTransport(port = 8086)
     
     # SSE event formatting is handled internally by sendSseEvent
     # This test verifies the transport is properly configured

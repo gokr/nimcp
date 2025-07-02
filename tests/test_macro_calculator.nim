@@ -4,9 +4,10 @@ import tables
 import options
 import ../src/nimcp/mcpmacros
 import ../src/nimcp/types
+import ../src/nimcp/server
 
-# Create a test server instance using the mcpServer template
-mcpServer("test-calculator", "1.0.0"):
+# Create a test server instance using the new mcpServer macro
+let testCalculatorServer = mcpServer("test-calculator", "1.0.0"):
   # Test proc with doc comments (same as in macro_calculator.nim)
   mcpTool:
     proc add(a: float, b: float): string =
@@ -25,7 +26,7 @@ mcpServer("test-calculator", "1.0.0"):
 # Test case for add tool
 test "add tool extracts doc comments correctly":
   # Get the registered tool
-  let tool = currentMcpServer.tools["add"]
+  let tool = testCalculatorServer.tools["add"]
   
   # Verify tool description
   check tool.description.isSome
@@ -45,7 +46,7 @@ test "add tool extracts doc comments correctly":
 # Test case for multiply tool
 test "multiply tool extracts doc comments correctly":
   # Get the registered tool
-  let tool = currentMcpServer.tools["multiply"]
+  let tool = testCalculatorServer.tools["multiply"]
   
   # Verify tool description
   check tool.description.isSome

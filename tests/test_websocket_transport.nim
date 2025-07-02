@@ -7,7 +7,7 @@ suite "WebSocket Transport Tests":
   
   test "WebSocket transport creation":
     let server = newMcpServer("test-server", "1.0.0")
-    let transport = newWebSocketTransport(server, 8080, "127.0.0.1")
+    let transport = newWebSocketTransport(8080, "127.0.0.1")
     
     check transport != nil
     check transport.port == 8080
@@ -23,7 +23,7 @@ suite "WebSocket Transport Tests":
       return token == "valid-token"
     
     let authConfig = auth.newAuthConfig(testValidator, false)
-    let transport = newWebSocketTransport(server, 8081, "127.0.0.1", authConfig)
+    let transport = newWebSocketTransport(8081, "127.0.0.1", authConfig)
     
     check transport != nil
     check transport.authConfig.enabled == true
@@ -35,14 +35,14 @@ suite "WebSocket Transport Tests":
   
   test "WebSocket transport configuration types":
     let server = newMcpServer("config-test", "1.0.0")
-    let transport = newWebSocketTransport(server, 8080, "127.0.0.1")
+    let transport = newWebSocketTransport(8080, "127.0.0.1")
     check transport.port == 8080
     check transport.host == "127.0.0.1"
     check transport.authConfig.enabled == false
     
     proc testAuth(token: string): bool {.gcsafe.} = token == "test"
     let authConfig = auth.newAuthConfig(testAuth, true)
-    let authTransport = newWebSocketTransport(server, 8081, "localhost", authConfig)
+    let authTransport = newWebSocketTransport(8081, "localhost", authConfig)
     check authTransport.port == 8081
     check authTransport.host == "localhost"
     check authTransport.authConfig.enabled == true
@@ -79,18 +79,16 @@ suite "WebSocket Transport Tests":
     check "test_tool" in server.tools
     
     # Create transport (but don't serve - just test creation)
-    let transport = newWebSocketTransport(server)
+    let transport = newWebSocketTransport()
     check transport != nil
     
     transport.shutdown()
 
   test "WebSocket connection counting":
     let server = newMcpServer("test-server", "1.0.0")
-    let transport = newWebSocketTransport(server)
+    let transport = newWebSocketTransport()
     
     # Initially no connections
     check transport.getActiveConnectionCount() == 0
     
     transport.shutdown()
-
-echo "WebSocket transport tests completed successfully!"

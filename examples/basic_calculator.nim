@@ -1,10 +1,10 @@
-## Macro-based calculator example with HTTP transport
+## Basic calculator using macro API with stdio transport
 ## Demonstrates automatic tool generation from proc signatures
 
 import ../src/nimcp
 import json, math, strformat
 
-mcpServer("macro-calculator", "1.0.0"):
+let server = mcpServer("basic-calculator", "1.0.0"):
   
   # This proc will be automatically converted to an MCP tool
   # Tool name: "add", schema generated from parameters, description from doc comment
@@ -62,9 +62,6 @@ mcpServer("macro-calculator", "1.0.0"):
         return fmt"Result: {res}"
 
 when isMainModule:
-  echo "Starting Macro Calculator MCP Server..."
-  echo "This example demonstrates the macro API with stdio transport"
-  echo ""
-  
-  # Use stdio transport (synchronous, for CLI integration)
-  runServer()
+  # Use stdio transport - communicates via stdin/stdout for CLI integration  
+  import ../src/nimcp/stdio_transport
+  serve(server)

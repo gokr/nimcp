@@ -3,7 +3,7 @@
 ## This module provides the stdio transport implementation for MCP servers.
 ## It handles JSON-RPC communication over stdin/stdout with concurrent request processing.
 
-import json, locks, strutils, options
+import json, locks, options
 import taskpools
 import types, protocol, server
 
