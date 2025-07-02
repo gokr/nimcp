@@ -2,7 +2,14 @@
 ## Implements the MCP SSE transport specification with bidirectional communication:
 ## - Server-to-client: SSE event stream
 ## - Client-to-server: HTTP POST requests
-## Note: SSE transport is deprecated in MCP 2024-11-05 but maintained for backwards compatibility
+## 
+## Note: SSE transport is deprecated in MCP specification as of 2024-11-05. 
+## The preferred transport is now Streamable HTTP (see mummy_transport.nim).
+## SSE transport is maintained for backwards compatibility with existing clients.
+##
+## Future Enhancement: Support for simultaneous multiple transports would allow
+## clients to choose their preferred transport (stdio, HTTP, WebSocket, SSE)
+## from a single server instance.
 
 import mummy, mummy/routers, mummy/common, json, strutils, strformat, options, tables, locks, random
 import server, types, protocol
@@ -14,7 +21,7 @@ type
     id*: string
     authenticated*: bool
     
-  SseTransport* = ref object of TransportInterface
+  SseTransport* = ref object
     ## SSE transport implementation for MCP servers
     server: McpServer
     router: Router
@@ -41,8 +48,6 @@ proc newSseTransport*(server: McpServer, port: int = 8080, host: string = "127.0
     sseEndpoint: sseEndpoint,
     messageEndpoint: messageEndpoint
   )
-  # Initialize transport interface capabilities
-  transport.capabilities = {tcBroadcast, tcEvents, tcUnicast}
   return transport
 
 proc generateConnectionId(): string =
@@ -51,7 +56,7 @@ proc generateConnectionId(): string =
 
 proc validateSseAuth(transport: SseTransport, request: Request): tuple[valid: bool, errorMsg: string] =
   ## Validate SSE authentication using shared auth module
-  let (valid, errorCode, errorMsg) = validateRequest(transport.authConfig, request)
+  let (valid, _, errorMsg) = validateRequest(transport.authConfig, request)
   if not valid:
     return (false, errorMsg)
   return (true, "")
@@ -74,7 +79,10 @@ proc sendSseMessage(connection: MummySseConnection, jsonMessage: JsonNode, id: s
   ## Send a JSON-RPC message via SSE
   sendEvent(connection, "message", $jsonMessage, id)
 
-# Note: broadcastMessage is now implemented as a polymorphic method below
+proc broadcastSseMessage(transport: SseTransport, jsonMessage: JsonNode) =
+  ## Broadcast a JSON-RPC message to all SSE connections
+  for connection in transport.connectionPool.connections():
+    sendSseMessage(connection, jsonMessage)
 
 proc setupRoutes(transport: SseTransport) =
   ## Setup SSE and message handling routes
@@ -104,11 +112,8 @@ proc setupRoutes(transport: SseTransport) =
       transport.connectionPool.addConnection(connection.id, connection)
       
       # Send initial endpoint event with message endpoint URL
-      let endpointEvent = %*{
-        "type": "endpoint",
-        "endpoint": transport.messageEndpoint
-      }
-      sendEvent(connection, "endpoint", $endpointEvent)
+      # Per MCP specification, endpoint event data should be plain URL string, not JSON
+      sendEvent(connection, "endpoint", transport.messageEndpoint)
       
       # Note: mummy handles the connection lifecycle, no need for manual keep-alive
       
@@ -155,8 +160,7 @@ proc setupRoutes(transport: SseTransport) =
       let response = transport.server.handleRequest(jsonRpcRequest)
       
       # Send response back via SSE to all connections
-      # In a real implementation, you'd want to route responses to specific connections
-      # based on request ID or session management
+      # Per MCP specification, tool responses should only be sent via SSE events
       
       # Create JSON response (same format as mummy transport)
       var responseJson = newJObject()
@@ -167,17 +171,22 @@ proc setupRoutes(transport: SseTransport) =
       if response.error.isSome():
         responseJson["error"] = %response.error.get()
       
-      broadcastMessage(transport, responseJson)
+      # Broadcast response via SSE to all connected clients
+      broadcastSseMessage(transport, responseJson)
       
-      # Also send HTTP response for immediate feedback
-      request.respond(200, headers = corsHeaders, body = $responseJson)
+      # Return HTTP 204 No Content (no response body per MCP specification)
+      request.respond(204, headers = corsHeaders)
       
     except JsonParsingError:
       let errorResponse = createParseError()
-      request.respond(200, headers = corsHeaders, body = $errorResponse)
+      # Broadcast error via SSE and return 204 No Content
+      broadcastSseMessage(transport, %errorResponse)
+      request.respond(204, headers = corsHeaders)
     except Exception as e:
       let errorResponse = createInternalError(JsonRpcId(kind: jridString, str: ""), e.msg)
-      request.respond(200, headers = corsHeaders, body = $errorResponse)
+      # Broadcast error via SSE and return 204 No Content
+      broadcastSseMessage(transport, %errorResponse)
+      request.respond(204, headers = corsHeaders)
   )
   
   # CORS preflight for message endpoint
@@ -224,45 +233,7 @@ proc getActiveConnectionCount*(transport: SseTransport): int =
   ## Get the number of active SSE connections
   transport.connectionPool.connectionCount()
 
-# Unified transport API for compatibility with WebSocket transport
-# Note: sendEvent is now implemented as a polymorphic method below
-
-# Polymorphic method implementations for TransportInterface
-method broadcastMessage*(transport: SseTransport, jsonMessage: JsonNode) =
-  ## Polymorphic implementation - broadcast to all SSE clients
-  for connection in transport.connectionPool.connections():
-    sendSseMessage(connection, jsonMessage)
-
-method sendEvent*(transport: SseTransport, eventType: string, data: JsonNode, target: string = "") =
-  ## Polymorphic implementation - send custom event to SSE clients
-  let dataStr = $data
-  if target != "":
-    # Send to specific connection if target specified
-    for connection in transport.connectionPool.connections():
-      if connection.id == target:
-        sendEvent(connection, eventType, dataStr)
-        break
-  else:
-    # Broadcast to all connections
-    for connection in transport.connectionPool.connections():
-      sendEvent(connection, eventType, dataStr)
-
-method getTransportKind*(transport: SseTransport): TransportKind =
-  ## Polymorphic implementation - return SSE transport kind
-  return tkSSE
-
-# Clean API overloads that hide the casting
-proc setTransport*(server: McpServer, transport: SseTransport) =
-  ## Set SSE transport with clean API (casting handled internally)
-  server.setSseTransport(cast[pointer](transport))
-
-proc getTransport*(server: McpServer, transportType: typedesc[SseTransport]): SseTransport =
-  ## Get SSE transport with clean API (casting handled internally)
-  let transportPtr = server.getSseTransportPtr()
-  if transportPtr != nil:
-    return cast[SseTransport](transportPtr)
-  else:
-    return nil
+# Note: Object variant transport system handles polymorphic operations via types.nim
 
 proc runSse*(server: McpServer, port: int = 8080, host: string = "127.0.0.1", authConfig: AuthConfig = newAuthConfig()) =
   ## Convenience function to run an MCP server over SSE transport

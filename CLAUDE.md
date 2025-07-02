@@ -70,9 +70,8 @@ server.registerTool(tool, handler)
 server.run()  # Stdio transport (synchronous)
 
 # Or with other transports:
-let sseTransport = newSseTransport(server, port = 8080)
-server.setTransport(sseTransport)
-server.run()
+server.setSseTransport(port = 8080, host = "127.0.0.1")
+server.run()  # Unified run method works for all transports
 ```
 
 ### Key Types
@@ -82,9 +81,8 @@ server.run()
 - `McpPrompt` - Reusable prompt templates
 - `McpToolResult`, `McpResourceContents` - Response types
 - `McpRequestContext` - Request context for context-aware tools
-- `TransportInterface` - Base interface for polymorphic transport abstraction
 - `TransportKind` - Enum defining transport types (stdio, SSE, WebSocket, HTTP)
-- `McpTransport` - Union type for type-safe transport storage
+- `McpTransport` - Object variant for type-safe transport storage with embedded data
 - `McpTransportCapabilities` - Set of transport capabilities (broadcast, events, etc.)
 - `AuthConfig` - Authentication configuration for HTTP/WebSocket/SSE transports
 - `ConnectionPool` - Generic connection management for transport layers
@@ -133,23 +131,63 @@ The server handles:
 - You find all dependencies in `nimcp.nimble`
 - Core dependencies: `nim >= 2.2.4`, `mummy` (HTTP/WebSocket server), `taskpools` (concurrency)
 
-## Polymorphic Transport System
+## Simplified Transport Architecture (2024)
 
-NimCP provides a powerful polymorphic transport abstraction that allows tools to work with any transport without specifying the transport type:
+NimCP uses a **unified object variant transport system** that eliminates inheritance and unsafe casting while maintaining polymorphic behavior:
+
+### Architecture Design
+
+**Simplified Structure**:
+- **Single `McpTransport` object variant** with embedded transport data
+- **No inheritance hierarchy** - all transports are regular objects
+- **Case-based polymorphic dispatch** instead of virtual methods
+- **Direct field access** - no casting or getters needed
+- **Unified `run()` method** works for all transport types
+
+### Transport Setup (New Simplified API)
+
+```nim
+let server = newMcpServer("name", "1.0.0")
+
+# Set transport using simplified configuration methods
+server.setSseTransport(port = 8080, host = "127.0.0.1")
+# OR
+server.setWebSocketTransport(port = 8080, host = "127.0.0.1") 
+# OR  
+server.setHttpTransport(port = 8080, host = "127.0.0.1")
+
+# Unified run method works for all transports
+server.run()
+```
+
+### Polymorphic Transport Access
+
+Tools can work with any transport through direct access to the object variant:
 
 ```nim
 # Tools can access any transport polymorphically
 proc universalTool(ctx: McpRequestContext, args: JsonNode): McpToolResult =
   let server = ctx.getServer()
-  let transport = server.getTransport()  # No type specification needed!
+  if not server.transport.isSome:
+    return McpToolResult(content: @[createTextContent("No transport available")])
   
-  if transport != nil:
-    # These calls work with SSE, WebSocket, or any future transport
-    transport.broadcastMessage(%*{"message": "Hello world"})
-    transport.sendEvent("notification", %*{"data": "test"})
+  # Direct access to transport - no casting needed!
+  var transport = server.transport.get()
+  let kind = transport.kind  # Direct field access
+  
+  # These calls work with SSE, WebSocket, or any future transport
+  transport.broadcastMessage(%*{"message": "Hello world"})
+  transport.sendEvent("notification", %*{"data": "test"})
   
   return McpToolResult(content: @[createTextContent("Success")])
 ```
+
+**Benefits of New Architecture**:
+- ✅ **Type Safety**: No unsafe casting or pointers
+- ✅ **Performance**: Compile-time dispatch, no virtual method overhead  
+- ✅ **Simplicity**: Single object variant vs dual type system
+- ✅ **Maintainability**: Direct field access, clear data flow
+- ✅ **Future-proof**: Easy to add new transport types
 
 **Transport Capabilities**:
 - `tcBroadcast` - Can broadcast messages to all connected clients
@@ -157,11 +195,11 @@ proc universalTool(ctx: McpRequestContext, args: JsonNode): McpToolResult =
 - `tcUnicast` - Can send messages to specific clients
 - `tcBidirectional` - Supports bidirectional communication
 
-**Polymorphic API**:
-- `server.getTransport(): TransportInterface` - Get transport without type specification
+**Transport API**:
+- `server.transport.get().kind` - Get transport type directly
 - `transport.broadcastMessage(jsonData)` - Broadcast to all clients
 - `transport.sendEvent(eventType, data, target)` - Send custom events
-- `transport.getTransportKind(): TransportKind` - Get transport type for introspection
+- `server.run()` - Unified run method for all transports
 
 ## Macro API Features
 The macro API automatically extracts:
@@ -354,6 +392,12 @@ mcpTool:
 - Always end todolists by running all the tests at the end to verify everything compiles and works
 - Prefer context-aware tools when you need access to the server or transport layer
 - Follow the macro API patterns for automatic schema generation
+
+### Refactoring and Code Cleanup
+- **Remove old unused code during refactoring** - We prioritize clean, maintainable code over backwards compatibility
+- When implementing new architecture patterns, completely remove the old implementation patterns
+- Delete deprecated methods, unused types, and obsolete code paths immediately
+- Keep the codebase lean and focused on the current architectural approach
 
 ### Async and Concurrency Guidelines
 - **DO NOT USE `asyncdispatch`** - This project explicitly avoids asyncdispatch for concurrency
