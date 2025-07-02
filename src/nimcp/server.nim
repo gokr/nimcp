@@ -1,10 +1,8 @@
-## MCP Server implementation using taskpools for concurrent request processing
+## MCP Server implementation 
 ##
-## This module provides the main MCP server implementation using the modern
-## taskpools library for better performance and energy efficiency.
+## This module provides the main MCP server implementation.
 
-import json, tables, options, locks, cpuinfo, strutils, algorithm, times, random
-import taskpools
+import json, tables, options, locks, strutils, algorithm, times, random
 import types, protocol, context, resource_templates, logging
 
 # Fine-grained locks for thread-safe access to server data structures
@@ -17,7 +15,6 @@ initLock(promptsLock)
 
 type
   McpServer* = ref object
-    ## Enhanced MCP server using taskpools for concurrent processing
     serverInfo*: McpServerInfo
     capabilities*: McpCapabilities
     tools*: Table[string, McpTool]
@@ -32,7 +29,6 @@ type
     resourceTemplates*: ResourceTemplateRegistry
     middleware*: seq[McpMiddleware]
     initialized*: bool
-    taskpool*: Taskpool
     requestTimeout*: int  # milliseconds
     enableContextLogging*: bool
     logger*: Logger
@@ -58,13 +54,12 @@ type
     resourcePrefix*: Option[string]
     promptPrefix*: Option[string]
 
-proc newMcpServer*(name: string, version: string, numThreads: int = 0): McpServer =
-  ## Create a new enhanced MCP server instance using taskpools for concurrency.
+proc newMcpServer*(name: string, version: string): McpServer =
+  ## Create a new MCP server instance.
   ##
   ## Args:
   ##   name: Human-readable name for the server
   ##   version: Semantic version string (e.g., "1.0.0")
-  ##   numThreads: Number of worker threads (0 = auto-detect)
   ##
   ## Returns:
   ##   A new McpServer instance ready for registration
@@ -84,13 +79,9 @@ proc newMcpServer*(name: string, version: string, numThreads: int = 0): McpServe
   result.logger.setComponent("mcp-server-" & name)
   result.logger.setupChroniclesLogging()
   
-  # Initialize taskpool with specified or auto-detected thread count
-  let threads = if numThreads > 0: numThreads else: countProcessors()
-  result.taskpool = Taskpool.new(numThreads = threads)
-  
   # Log server initialization
   result.logger.info("MCP server initialized", 
-    context = {"name": %name, "version": %version, "threads": %threads}.toTable)
+    context = {"name": %name, "version": %version}.toTable)
 
 
 # Server-aware context creation
@@ -137,25 +128,11 @@ proc removeCustomData*(server: McpServer, key: string) =
   if key in server.customData:
     server.customData.del(key)
 
-
-
-
-
-
-
-
-
 proc shutdown*(server: McpServer) =
   ## Shutdown the server and clean up resources
   server.logger.info("Shutting down MCP server")
-  
-  if server.taskpool != nil:
-    server.taskpool.syncAll()
-    server.taskpool.shutdown()
-  
   # Clean up any remaining contexts
   cleanupExpiredContexts()
-  
   server.logger.info("MCP server shutdown complete")
 
 # Transport helper methods
@@ -749,9 +726,9 @@ proc newMountPoint*(path: string, server: McpServer, prefix: Option[string] = no
     prefix: prefix
   )
 
-proc newComposedServer*(name: string, version: string, numThreads: int = 0): ComposedServer =
+proc newComposedServer*(name: string, version: string): ComposedServer =
   ## Create a new composed server that can mount other servers
-  let mainServer = newMcpServer(name, version, numThreads)
+  let mainServer = newMcpServer(name, version)
   ComposedServer(
     mainServer: mainServer,  # Direct ref assignment instead of unsafe pointer cast
     mountPoints: @[],

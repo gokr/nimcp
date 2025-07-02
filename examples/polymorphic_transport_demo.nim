@@ -49,4 +49,5 @@ when isMainModule:
     transport.serve(server)
   else:
     # Stdio transport (default) - communicates via stdin/stdout
-    serve(server)
+    let transport = newStdioTransport()
+    transport.serve(server)

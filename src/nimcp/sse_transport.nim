@@ -53,8 +53,8 @@
 ## clients to choose their preferred transport (stdio, HTTP, WebSocket, SSE) from a single server instance.
 
 import mummy, mummy/routers, mummy/common, json, strutils, strformat, options, tables, locks, random
-import server, types, protocol
-import auth, connection_pool
+import server, types, protocol, auth, connection_pool
+
 type
   MummySseConnection* = ref object
     ## Wrapper for mummy SSEConnection with additional MCP state

@@ -4,35 +4,39 @@
 ## It handles JSON-RPC communication over stdin/stdout with concurrent request processing.
 
 import json, locks, options
-import taskpools
+import taskpools, cpuinfo
 import types, protocol, server
 
-# Thread-safe output handling
-var stdoutLock: Lock
-initLock(stdoutLock)
+type StdioTransport* = ref object
+  ## Stdio transport implementation for MCP servers
+  taskpool: Taskpool
+  stdoutLock: Lock
 
-proc safeEcho(msg: string) =
-  withLock stdoutLock:
+proc newStdioTransport*(numThreads: int = 0): StdioTransport =
+  ## Args:
+  ##   numThreads: Number of worker threads (0 = auto-detect)
+  new(result)
+  let threads = if numThreads > 0: numThreads else: countProcessors()
+  result.taskpool = Taskpool.new(numThreads = threads)
+  initLock(result.stdoutLock)
+
+proc safeEcho(transport: StdioTransport, msg: string) =
+  ## Thread-safe output handling
+  withLock transport.stdoutLock:
     echo msg
     stdout.flushFile()
 
-# Global server pointer for taskpools (similar to threadpool approach)
-var globalServerPtr: ptr McpServer
-
 # Request processing task for taskpools - uses global pointer to avoid isolation issues
-proc processRequestTask(requestLine: string) {.gcsafe.} =
+proc processRequestTask(transport: ptr StdioTransport, server: ptr McpServer, requestLine: string) {.gcsafe.} =
   var requestId: JsonRpcId = JsonRpcId(kind: jridString, str: "")
-
   try:
     let request = parseJsonRpcMessage(requestLine)
-
     if request.id.isSome():
       requestId = request.id.get
-
     if not request.id.isSome():
-      globalServerPtr[].handleNotification(request)
+      server[].handleNotification(request)
     else:
-      let response = globalServerPtr[].handleRequest(request)
+      let response = server[].handleRequest(request)
 
       # Create JSON response manually for thread safety
       var responseJson = newJObject()
@@ -47,33 +51,33 @@ proc processRequestTask(requestLine: string) {.gcsafe.} =
         if response.error.get.data.isSome:
           errorObj["data"] = response.error.get.data.get
         responseJson["error"] = errorObj
-      safeEcho($responseJson)
+      transport[].safeEcho($responseJson)
   except Exception as e:
     let errorResponse = createJsonRpcError(requestId, ParseError, "Parse error: " & e.msg)
-    safeEcho($(%errorResponse))
+    transport[].safeEcho($(%errorResponse))
 
 # Main stdio transport serving procedure
-proc serve*(server: McpServer) =
+proc serve*(transport: StdioTransport, server: McpServer) =
   ## Serve the MCP server with stdio transport using modern taskpools
-  globalServerPtr = addr server
-
   while true:
     try:
       let line = stdin.readLine()
       if line.len == 0:
         break
-
       # Spawn task using taskpools - returns void so no need to track
-      server.taskpool.spawn processRequestTask(line)
-
+      transport.taskpool.spawn processRequestTask(addr transport, addr server, line)
     except EOFError:
       # Sync all pending tasks before shutdown
-      server.taskpool.syncAll()
+      transport.taskpool.syncAll()
       break
     except Exception:
       # Sync all pending tasks before shutdown
-      server.taskpool.syncAll()
+      transport.taskpool.syncAll()
       break
 
   # Wait for all remaining tasks and shutdown
+   
+  if transport.taskpool != nil:
+    transport.taskpool.syncAll()
+    transport.taskpool.shutdown()
   server.shutdown()

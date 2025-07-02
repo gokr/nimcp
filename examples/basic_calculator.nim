@@ -1,7 +1,7 @@
 ## Basic calculator using macro API with stdio transport
 ## Demonstrates automatic tool generation from proc signatures
 
-import ../src/nimcp
+import ../src/nimcp, ../src/nimcp/stdio_transport
 import json, math, strformat
 
 let server = mcpServer("basic-calculator", "1.0.0"):
@@ -63,5 +63,5 @@ let server = mcpServer("basic-calculator", "1.0.0"):
 
 when isMainModule:
   # Use stdio transport - communicates via stdin/stdout for CLI integration  
-  import ../src/nimcp/stdio_transport
-  serve(server)
+  let transport = newStdioTransport()
+  transport.serve(server)

@@ -2,9 +2,9 @@
 ## Shows how to compose multiple macro-created MCP servers using the new API
 
 import ../src/nimcp/mcpmacros
-import ../src/nimcp/server  # For composition types
-import ../src/nimcp/stdio_transport as stdio
-import json, math, strformat, os, sequtils, strutils, options, tables
+import ../src/nimcp/server
+import ../src/nimcp/stdio_transport
+import json, math, strformat, os, strutils, options, tables
 
 # Calculator service using the macro system
 let calculatorServer = mcpServer("calculator-service", "1.0.0"):
@@ -75,10 +75,9 @@ let stringServer = mcpServer("string-service", "1.0.0"):
     proc reverse(text: string): string =
       ## Reverse a string
       ## - text: Text to reverse
-      var result = ""
+      result = ""
       for i in countdown(text.len - 1, 0):
         result.add(text[i])
-      return result
   
   mcpTool:
     proc wordCount(text: string): string =
@@ -138,4 +137,5 @@ when isMainModule:
   echo ""
   
   # Run the composed server using the main server
-  stdio.serve(composedServer.mainServer)
+  let transport = newStdioTransport()
+  transport.serve(composedServer.mainServer)

@@ -1,8 +1,9 @@
 ## Getting Started - Basic MCP server with echo and time tools
 ## Shows both manual API and macro API patterns
 
-import ../src/nimcp
+import ../src/nimcp,  ../src/nimcp/stdio_transport
 import json, times, options
+
 
 # Option 1: Manual API (explicit control)
 let manualServer = newMcpServer("manual-example", "1.0.0")
@@ -38,5 +39,5 @@ let macroServer = mcpServer("macro-example", "1.0.0"):
 
 when isMainModule:
   # Use the macro server (preferred approach)
-  import ../src/nimcp/stdio_transport
-  serve(macroServer)
+  let transport = newStdioTransport()
+  transport.serve(macroServer)
