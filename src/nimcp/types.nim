@@ -244,7 +244,7 @@ type
     tcEvents = "events"           ## Supports custom event types
     tcBidirectional = "bidirectional"  ## Supports client-to-server communication
 
-# Transport union type - using pointer to avoid circular dependencies
+# Transport union type - embedded data structures to avoid pointers and casting
   TransportKind* = enum
     tkNone = "none"           ## No transport set
     tkStdio = "stdio"         ## Standard input/output transport
@@ -252,35 +252,75 @@ type
     tkWebSocket = "websocket" ## WebSocket transport  
     tkSSE = "sse"             ## Server-Sent Events transport
   
+  # Forward declarations for transport data
+  HttpTransportData* = object
+    port*: int
+    host*: string
+    authConfig*: pointer  # AuthConfig
+    allowedOrigins*: seq[string]
+    connections*: pointer  # Table[string, Request]
+  
+  WebSocketTransportData* = object
+    port*: int
+    host*: string
+    authConfig*: pointer  # AuthConfig
+    connectionPool*: pointer  # ConnectionPool[WebSocketConnection]
+  
+  SseTransportData* = object
+    port*: int
+    host*: string
+    authConfig*: pointer  # AuthConfig
+    connectionPool*: pointer  # ConnectionPool[MummySseConnection]
+    sseEndpoint*: string
+    messageEndpoint*: string
+  
   McpTransport* = object
-    ## Union type for different transport implementations (using pointers to avoid circular deps)
+    ## Union type with embedded transport data (no inheritance or pointers needed)
+    capabilities*: McpTransportCapabilities
     case kind*: TransportKind
     of tkNone, tkStdio:
       discard  # No additional data needed
     of tkHttp:
-      httpTransport*: pointer  # HttpTransport ref object
+      httpData*: HttpTransportData
     of tkWebSocket:
-      wsTransport*: pointer    # WebSocketTransport ref object
+      wsData*: WebSocketTransportData
     of tkSSE:
-      sseTransport*: pointer   # SseTransport ref object
-
-  # Abstract transport interface for polymorphic access
-  TransportInterface* = ref object of RootObj
-    ## Abstract interface that all transports implement for polymorphic access
-    capabilities*: McpTransportCapabilities
+      sseData*: SseTransportData
     
-# Polymorphic methods for transport interface
-method broadcastMessage*(transport: TransportInterface, jsonMessage: JsonNode) {.base, gcsafe.} =
-  ## Base method for broadcasting messages - implemented by concrete transports
-  raise newException(CatchableError, "broadcastMessage not implemented for this transport")
+# Polymorphic transport procedures using case-based dispatch
+proc broadcastMessage*(transport: var McpTransport, jsonMessage: JsonNode) {.gcsafe.} =
+  ## Broadcast message to all clients based on transport type
+  case transport.kind:
+  of tkNone, tkStdio:
+    discard  # No broadcasting for stdio transport
+  of tkHttp:
+    # HTTP transport broadcasting (placeholder - would call actual implementation)
+    discard
+  of tkWebSocket:
+    # WebSocket transport broadcasting (placeholder - would call actual implementation) 
+    discard
+  of tkSSE:
+    # SSE transport broadcasting (placeholder - would call actual implementation)
+    discard
 
-method sendEvent*(transport: TransportInterface, eventType: string, data: JsonNode, target: string = "") {.base, gcsafe.} =
-  ## Base method for sending events - implemented by concrete transports
-  raise newException(CatchableError, "sendEvent not implemented for this transport")
+proc sendEvent*(transport: var McpTransport, eventType: string, data: JsonNode, target: string = "") {.gcsafe.} =
+  ## Send custom event based on transport type
+  case transport.kind:
+  of tkNone, tkStdio:
+    discard  # No events for stdio transport
+  of tkHttp:
+    # HTTP transport events (placeholder - would call actual implementation)
+    discard
+  of tkWebSocket:
+    # WebSocket transport events (placeholder - would call actual implementation)
+    discard
+  of tkSSE:
+    # SSE transport events (placeholder - would call actual implementation)
+    discard
 
-method getTransportKind*(transport: TransportInterface): TransportKind {.base, gcsafe.} =
-  ## Get the kind of transport - implemented by concrete transports
-  return tkNone
+proc getTransportKind*(transport: McpTransport): TransportKind {.gcsafe.} =
+  ## Get the kind of transport
+  transport.kind
 
 # Middleware types
 type

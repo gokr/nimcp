@@ -6,7 +6,7 @@ import server, types, protocol
 import auth, cors  # Import shared modules
 
 type
-  MummyTransport* = ref object of TransportInterface
+  MummyTransport* = ref object
     server: McpServer
     router: Router
     httpServer: Server
@@ -27,8 +27,6 @@ proc newMummyTransport*(server: McpServer, port: int = 8080, host: string = "127
     allowedOrigins: defaultOrigins,
     connections: initTable[string, Request]()
   )
-  # Initialize transport interface capabilities
-  TransportInterface(transport).capabilities = {tcBroadcast, tcEvents}
   return transport
 proc validateOrigin(transport: MummyTransport, request: Request): bool =
   ## Validate Origin header to prevent DNS rebinding attacks
@@ -227,51 +225,4 @@ proc runHttp*(server: McpServer, port: int = 8080, host: string = "127.0.0.1", a
   let transport = newMummyTransport(server, port, host, authConfig, allowedOrigins)
   transport.start()
 
-# Clean API overloads that hide the casting  
-proc setTransport*(server: McpServer, transport: MummyTransport) =
-  ## Set HTTP transport with clean API (casting handled internally)
-  server.setHttpTransport(cast[pointer](transport))
-
-proc getTransport*(server: McpServer, transportType: typedesc[MummyTransport]): MummyTransport =
-  ## Get HTTP transport with clean API (casting handled internally)
-  let transportPtr = server.getHttpTransportPtr()
-  if transportPtr != nil:
-    return cast[MummyTransport](transportPtr)
-  else:
-    return nil
-
-# Polymorphic method implementations for TransportInterface
-method broadcastMessage*(transport: MummyTransport, jsonMessage: JsonNode) =
-  ## Polymorphic implementation - broadcast to all active streaming connections
-  ## Note: This only works for connections that are in streaming mode
-  let eventData = formatSseEvent("message", jsonMessage)
-  for sessionId, request in transport.connections.pairs:
-    try:
-      # In a real implementation, we would write to the active connection stream
-      # For now, this is a placeholder that shows the structure
-      echo fmt"Would broadcast to session {sessionId}: {eventData}"
-    except:
-      # Remove failed connections
-      transport.connections.del(sessionId)
-
-method sendEvent*(transport: MummyTransport, eventType: string, data: JsonNode, target: string = "") =
-  ## Polymorphic implementation - send custom event to streaming connections
-  let eventData = formatSseEvent(eventType, data)
-  if target != "":
-    # Send to specific connection
-    if target in transport.connections:
-      try:
-        echo fmt"Would send event to {target}: {eventData}"
-      except:
-        transport.connections.del(target)
-  else:
-    # Broadcast to all connections
-    for sessionId, request in transport.connections.pairs:
-      try:
-        echo fmt"Would send event to session {sessionId}: {eventData}"
-      except:
-        transport.connections.del(sessionId)
-
-method getTransportKind*(transport: MummyTransport): TransportKind =
-  ## Polymorphic implementation - return HTTP transport kind
-  return tkHttp
+# Transport operations are now handled by the unified polymorphic procedures in types.nim

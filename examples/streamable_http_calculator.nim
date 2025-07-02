@@ -29,13 +29,16 @@ proc streamingCalculationTool(ctx: McpRequestContext, args: JsonNode): McpToolRe
   
   # Access transport polymorphically - works with HTTP, WebSocket, SSE
   let server = ctx.getServer()
-  let transport = if server != nil: server.getTransport() else: nil
+  if server == nil:
+    echo "   ⚠️  No server available - continuing without streaming"
+    return McpToolResult(content: @[createTextContent("Error: No server available")])
   
-  if transport == nil:
+  if not server.transport.isSome:
     echo "   ⚠️  No transport available - continuing without streaming"
     return McpToolResult(content: @[createTextContent("Error: No transport available")])
   
-  let transportKind = transport.getTransportKind()
+  var transport = server.transport.get()
+  let transportKind = transport.kind
   echo fmt"   📡 Using transport: {transportKind} for streaming calculations"
   
   # Send start event
@@ -126,12 +129,14 @@ proc universalNotifyTool(ctx: McpRequestContext, args: JsonNode): McpToolResult 
   echo fmt"📻 [UNIVERSAL] Broadcasting {count} notifications: '{message}'"
   
   let server = ctx.getServer()
-  let transport = if server != nil: server.getTransport() else: nil
+  if server == nil:
+    return McpToolResult(content: @[createTextContent("Error: No server available")])
   
-  if transport == nil:
+  if not server.transport.isSome:
     return McpToolResult(content: @[createTextContent("Error: No transport available")])
   
-  let transportKind = transport.getTransportKind()
+  var transport = server.transport.get()
+  let transportKind = transport.kind
   echo fmt"   📡 Using transport: {transportKind}"
   
   # Send notifications using universal polymorphic API

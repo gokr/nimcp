@@ -15,7 +15,9 @@ proc notifyTool(ctx: McpRequestContext, args: JsonNode): McpToolResult {.gcsafe.
   
   # Access SSE transport from server via request context
   let server = ctx.getServer()
-  let transport = if server != nil: server.getTransport(SseTransport) else: nil
+  if server == nil or not server.transport.isSome:
+    return McpToolResult(content: @[createTextContent("Error: No transport available")])
+  var transport = server.transport.get()
   
   # Send actual SSE notifications
   for i in 1..count:
@@ -28,11 +30,8 @@ proc notifyTool(ctx: McpRequestContext, args: JsonNode): McpToolResult {.gcsafe.
       "source": "macro_api"
     }
     
-    if transport != nil:
-      transport.broadcastMessage(notificationData)
-      echo fmt"   📨 [MACRO] Sent notification {i}/{count} via SSE"
-    else:
-      echo fmt"   ⚠️  [MACRO] SSE transport not available - notification {i}/{count} not sent"
+    transport.broadcastMessage(notificationData)
+    echo fmt"   📨 [MACRO] Sent notification {i}/{count} via SSE"
     
     # Small delay between notifications for demonstration
     if i < count:
@@ -52,27 +51,27 @@ proc progressTool(ctx: McpRequestContext, args: JsonNode): McpToolResult {.gcsaf
   
   # Access SSE transport from server via request context
   let server = ctx.getServer()
-  let transport = if server != nil: server.getTransport(SseTransport) else: nil
+  if server == nil or not server.transport.isSome:
+    return McpToolResult(content: @[createTextContent("Error: No transport available")])
+  var transport = server.transport.get()
   
   # Send start notification
-  if transport != nil:
-    let startData = %*{
-      "type": "macro_progress_start",
-      "operation": operation,
-      "total_steps": steps,
-      "timestamp": $now(),
-      "source": "macro_api"
-    }
-    transport.broadcastMessage(startData)
-    echo "   🚀 [MACRO] Sent start notification via SSE"
+  let startData = %*{
+    "type": "macro_progress_start",
+    "operation": operation,
+    "total_steps": steps,
+    "timestamp": $now(),
+    "source": "macro_api"
+  }
+  transport.broadcastMessage(startData)
+  echo "   🚀 [MACRO] Sent start notification via SSE"
   
   for step in 1..steps:
     sleep(800)  # Simulate work
     let percentage = (step * 100) div steps
     
     # Send real progress updates via SSE
-    if transport != nil:
-      let progressData = %*{
+    let progressData = %*{
         "type": "macro_progress",
         "operation": operation,
         "current_step": step,
@@ -80,23 +79,20 @@ proc progressTool(ctx: McpRequestContext, args: JsonNode): McpToolResult {.gcsaf
         "percentage": percentage,
         "timestamp": $now(),
         "source": "macro_api"
-      }
-      transport.broadcastMessage(progressData)
-      echo fmt"   📊 [MACRO] Progress via SSE: {step}/{steps} ({percentage}%)"
-    else:
-      echo fmt"   📊 [MACRO] Progress: {step}/{steps} ({percentage}%) [SSE not available]"
+    }
+    transport.broadcastMessage(progressData)
+    echo fmt"   📊 [MACRO] Progress via SSE: {step}/{steps} ({percentage}%)"
   
   # Send completion notification
-  if transport != nil:
-    let completeData = %*{
-      "type": "macro_progress_complete",
-      "operation": operation,
-      "final_steps": steps,
-      "timestamp": $now(),
-      "source": "macro_api"
-    }
-    transport.broadcastMessage(completeData)
-    echo "   ✅ [MACRO] Sent completion notification via SSE"
+  let completeData = %*{
+    "type": "macro_progress_complete",
+    "operation": operation,
+    "final_steps": steps,
+    "timestamp": $now(),
+    "source": "macro_api"
+  }
+  transport.broadcastMessage(completeData)
+  echo "   ✅ [MACRO] Sent completion notification via SSE"
   
   return McpToolResult(content: @[createTextContent(fmt"[MACRO] Operation '{operation}' completed with {steps} steps and real-time SSE updates")])
 

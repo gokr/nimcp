@@ -22,7 +22,6 @@ task test, "Run all tests":
 
 task examples, "Check that all examples compile":
   echo "🔧 Checking all examples compile properly..."
-  exec "nimble install -d"
   
   var failed: seq[string] = @[]
   var passed: seq[string] = @[]

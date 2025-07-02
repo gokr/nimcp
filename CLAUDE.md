@@ -406,3 +406,8 @@ mcpTool:
 - For HTTP/WebSocket transports, use Mummy's built-in async capabilities but avoid introducing asyncdispatch dependencies
 - All concurrent operations should be implemented using taskpools and synchronous patterns for stdio transport
 - Real-time capabilities are provided via WebSocket transport using Mummy's built-in WebSocket support
+
+## Coding Guidelines for Comments and Documentation
+- Do not add comments that reflect what has changed, we use git for change tracking
+- Only describe current code
+- Do not add unnecessary commentary or explain code that is self-explanatory

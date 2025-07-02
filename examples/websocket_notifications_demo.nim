@@ -20,7 +20,15 @@ proc notifyTool(ctx: McpRequestContext, args: JsonNode): McpToolResult {.gcsafe.
   
   # Access WebSocket transport from server via request context
   let server = ctx.getServer()
-  let transport = if server != nil: server.getTransport(WebSocketTransport) else: nil
+  if server == nil:
+    echo "   ⚠️  [WebSocket] No server available"
+    return McpToolResult(content: @[createTextContent("Error: No server available")])
+  
+  if not server.transport.isSome:
+    echo "   ⚠️  [WebSocket] No transport available"
+    return McpToolResult(content: @[createTextContent("Error: No transport available")])
+  
+  var transport = server.transport.get()
   
   # Send actual WebSocket notifications using unified API
   for i in 1..count:
@@ -33,11 +41,8 @@ proc notifyTool(ctx: McpRequestContext, args: JsonNode): McpToolResult {.gcsafe.
       "source": "websocket_api"
     }
     
-    if transport != nil:
-      transport.broadcastMessage(notificationData)  # Unified API - same as SSE!
-      echo fmt"   📨 [WebSocket] Sent notification {i}/{count} via WebSocket"
-    else:
-      echo fmt"   ⚠️  [WebSocket] WebSocket transport not available - notification {i}/{count} not sent"
+    transport.broadcastMessage(notificationData)  # Unified API - same as SSE!
+    echo fmt"   📨 [WebSocket] Sent notification {i}/{count} via {transport.kind}"
     
     # Small delay between notifications for demonstration
     if i < count:
@@ -58,46 +63,49 @@ proc progressTool(ctx: McpRequestContext, args: JsonNode): McpToolResult {.gcsaf
   
   # Access WebSocket transport from server via request context
   let server = ctx.getServer()
-  let transport = if server != nil: server.getTransport(WebSocketTransport) else: nil
+  if server == nil:
+    echo "   ⚠️  [WebSocket] No server available"
+    return McpToolResult(content: @[createTextContent("Error: No server available")])
+  
+  if not server.transport.isSome:
+    echo "   ⚠️  [WebSocket] No transport available"
+    return McpToolResult(content: @[createTextContent("Error: No transport available")])
+  
+  var transport = server.transport.get()
   
   # Send start notification using unified event API
-  if transport != nil:
-    let startData = %*{
-      "operation": "websocket_count",
-      "target": target,
-      "delay_ms": delay,
-      "timestamp": $now()
-    }
-    transport.sendEvent("progress_start", startData)  # Unified API - same as SSE!
-    echo "   🚀 [WebSocket] Sent start notification via WebSocket"
+  let startData = %*{
+    "operation": "websocket_count",
+    "target": target,
+    "delay_ms": delay,
+    "timestamp": $now()
+  }
+  transport.sendEvent("progress_start", startData)  # Unified API - same as SSE!
+  echo "   🚀 [WebSocket] Sent start notification via WebSocket"
   
   for i in 1..target:
     sleep(delay)
     let percentage = (i * 100) div target
     
     # Send real progress updates via WebSocket using unified API
-    if transport != nil:
-      let progressData = %*{
-        "operation": "websocket_count",
-        "current": i,
-        "total": target,
-        "percentage": percentage,
-        "timestamp": $now()
-      }
-      transport.sendEvent("progress_update", progressData)  # Unified API!
-      echo fmt"   📊 [WebSocket] Progress via WebSocket: {i}/{target} ({percentage}%)"
-    else:
-      echo fmt"   📊 [WebSocket] Progress: {i}/{target} ({percentage}%) [WebSocket not available]"
-  
-  # Send completion notification
-  if transport != nil:
-    let completeData = %*{
+    let progressData = %*{
       "operation": "websocket_count",
-      "final_count": target,
+      "current": i,
+      "total": target,
+      "percentage": percentage,
       "timestamp": $now()
     }
-    transport.sendEvent("progress_complete", completeData)  # Unified API!
-    echo "   ✅ [WebSocket] Sent completion notification via WebSocket"
+    transport.sendEvent("progress_update", progressData)  # Unified API!
+    echo fmt"   📊 [WebSocket] Progress via WebSocket: {i}/{target} ({percentage}%)"
+  
+  # Send completion notification
+  let completeData = %*{
+    "operation": "websocket_count",
+    "final_count": target,
+    "timestamp": $now()
+  }
+  transport.sendEvent("progress_complete", completeData)  # Unified API!
+  echo "   ✅ [WebSocket] Sent completion notification via WebSocket"
   
   return McpToolResult(content: @[createTextContent(fmt"Count completed: reached {target} with real-time WebSocket updates")])
 

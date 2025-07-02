@@ -20,14 +20,17 @@ proc notifyTool(ctx: McpRequestContext, args: JsonNode): McpToolResult {.gcsafe.
   
   # Access transport polymorphically - works with ANY transport type!
   let server = ctx.getServer()
-  let transport = if server != nil: server.getTransport() else: nil  # 🎉 No type specification needed!
+  if server == nil:
+    echo "   ⚠️  No server available"
+    return McpToolResult(content: @[createTextContent("Error: No server available")])
   
-  if transport == nil:
+  if not server.transport.isSome:
     echo "   ⚠️  No transport available"
     return McpToolResult(content: @[createTextContent("Error: No transport available")])
   
-  # Optional: Show which transport is being used
-  let transportKind = transport.getTransportKind()
+  # Direct access to transport - no casting needed!
+  var transport = server.transport.get()
+  let transportKind = transport.kind
   echo fmt"   📡 Using transport: {transportKind}"
   
   # Send notifications using polymorphic API
@@ -63,13 +66,16 @@ proc slowCountTool(ctx: McpRequestContext, args: JsonNode): McpToolResult {.gcsa
   
   # Access transport polymorphically - works with ANY transport type!
   let server = ctx.getServer()
-  let transport = if server != nil: server.getTransport() else: nil  # 🎉 No type needed!
+  if server == nil:
+    echo "   ⚠️  No server available"
+    return McpToolResult(content: @[createTextContent("Error: No server available")])
   
-  if transport == nil:
+  if not server.transport.isSome:
     echo "   ⚠️  No transport available"
     return McpToolResult(content: @[createTextContent("Error: No transport available")])
   
-  let transportKind = transport.getTransportKind()
+  var transport = server.transport.get()
+  let transportKind = transport.kind
   echo fmt"   📨 Sending real-time progress updates via {transportKind}:"
   
   # Send start notification using polymorphic API

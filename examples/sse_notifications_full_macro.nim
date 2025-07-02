@@ -40,7 +40,9 @@ mcpServer("sse-notifications-full-macro", "1.0.0"):
       
       # Access SSE transport from server via request context
       let server = ctx.getServer()
-      let transport = if server != nil: server.getTransport(SseTransport) else: nil
+      if server == nil or not server.transport.isSome:
+        return "Error: No transport available"
+      var transport = server.transport.get()
       
       # Send actual SSE notifications
       for i in 1..count:
@@ -53,11 +55,8 @@ mcpServer("sse-notifications-full-macro", "1.0.0"):
           "source": "full_macro_api"
         }
         
-        if transport != nil:
-          transport.broadcastMessage(notificationData)
-          echo fmt"   📨 Sent notification {i}/{count} via SSE"
-        else:
-          echo fmt"   ⚠️  SSE transport not available - notification {i}/{count} not sent"
+        transport.broadcastMessage(notificationData)
+        echo fmt"   📨 Sent notification {i}/{count} via SSE"
         
         # Small delay between notifications for demonstration
         if i < count:
@@ -75,51 +74,48 @@ mcpServer("sse-notifications-full-macro", "1.0.0"):
       
       # Access SSE transport from server via request context
       let server = ctx.getServer()
-      let transport = if server != nil: server.getTransport(SseTransport) else: nil
+      if server == nil or not server.transport.isSome:
+        return "Error: No transport available"
+      var transport = server.transport.get()
       
       # Send start notification
-      if transport != nil:
-        let startData = %*{
-          "type": "full_macro_progress_start",
-          "operation": operation,
-          "total_steps": steps,
-          "timestamp": $now(),
-          "source": "full_macro_api"
-        }
-        transport.broadcastMessage(startData)
-        echo "   🚀 Sent start notification via SSE"
+      let startData = %*{
+        "type": "full_macro_progress_start",
+        "operation": operation,
+        "total_steps": steps,
+        "timestamp": $now(),
+        "source": "full_macro_api"
+      }
+      transport.broadcastMessage(startData)
+      echo "   🚀 Sent start notification via SSE"
       
       for step in 1..steps:
         sleep(600)  # Simulate work
         let percentage = (step * 100) div steps
         
         # Send real progress updates via SSE
-        if transport != nil:
-          let progressData = %*{
-            "type": "full_macro_progress",
-            "operation": operation,
-            "current_step": step,
-            "total_steps": steps,
-            "percentage": percentage,
-            "timestamp": $now(),
-            "source": "full_macro_api"
-          }
-          transport.broadcastMessage(progressData)
-          echo fmt"   📊 Progress via SSE: {step}/{steps} ({percentage}%)"
-        else:
-          echo fmt"   📊 Progress: {step}/{steps} ({percentage}%) [SSE not available]"
+        let progressData = %*{
+          "type": "full_macro_progress",
+          "operation": operation,
+          "current_step": step,
+          "total_steps": steps,
+          "percentage": percentage,
+          "timestamp": $now(),
+          "source": "full_macro_api"
+        }
+        transport.broadcastMessage(progressData)
+        echo fmt"   📊 Progress via SSE: {step}/{steps} ({percentage}%)"
       
       # Send completion notification
-      if transport != nil:
-        let completeData = %*{
+      let completeData = %*{
           "type": "full_macro_progress_complete",
           "operation": operation,
           "final_steps": steps,
           "timestamp": $now(),
           "source": "full_macro_api"
-        }
-        transport.broadcastMessage(completeData)
-        echo "   ✅ Sent completion notification via SSE"
+      }
+      transport.broadcastMessage(completeData)
+      echo "   ✅ Sent completion notification via SSE"
       
       return fmt"Operation '{operation}' completed with {steps} steps and real-time SSE updates"
   
@@ -130,22 +126,20 @@ mcpServer("sse-notifications-full-macro", "1.0.0"):
       
       # Access SSE transport from server via request context
       let server = ctx.getServer()
-      let transport = if server != nil: server.getTransport(SseTransport) else: nil
+      if server == nil or not server.transport.isSome:
+        return "Error: No transport available"
+      var transport = server.transport.get()
       
-      if transport != nil:
-        let eventData = %*{
-          "type": event_type,
-          "data": data,
-          "timestamp": $now(),
-          "source": "full_macro_api",
-          "broadcast_id": $now().toTime().toUnix()
-        }
-        transport.broadcastMessage(eventData)
-        echo fmt"   📡 Broadcasted event '{event_type}' via SSE"
-        return fmt"Event '{event_type}' broadcasted successfully"
-      else:
-        echo "   ⚠️  SSE transport not available - event not broadcasted"
-        return "Error: SSE transport not available"
+      let eventData = %*{
+        "type": event_type,
+        "data": data,
+        "timestamp": $now(),
+        "source": "full_macro_api",
+        "broadcast_id": $now().toTime().toUnix()
+      }
+      transport.broadcastMessage(eventData)
+      echo fmt"   📡 Broadcasted event '{event_type}' via SSE"
+      return fmt"Event '{event_type}' broadcasted successfully"
 
 proc serverInfoResource(uri: string): McpResourceContents {.gcsafe.} =
   ## Resource showing full macro API integration

@@ -21,14 +21,17 @@ proc universalNotifyTool(ctx: McpRequestContext, args: JsonNode): McpToolResult 
   
   # Access transport polymorphically - NO type specification needed!
   let server = ctx.getServer()
-  let transport = if server != nil: server.getTransport() else: nil  # 🎉 No type needed!
+  if server == nil:
+    echo "   ⚠️  No server available - notifications not sent"
+    return McpToolResult(content: @[createTextContent("Error: No server available")])
   
-  if transport == nil:
+  if not server.transport.isSome:
     echo "   ⚠️  No transport available - notifications not sent"
     return McpToolResult(content: @[createTextContent("Error: No transport available")])
   
-  # Get transport kind for logging (optional)
-  let transportKind = transport.getTransportKind()
+  # Get transport directly from server - no casting needed!
+  var transport = server.transport.get()
+  let transportKind = transport.kind
   echo fmt"   📡 Using transport: {transportKind}"
   
   # Send notifications using unified polymorphic API
@@ -64,13 +67,16 @@ proc universalProgressTool(ctx: McpRequestContext, args: JsonNode): McpToolResul
   
   # Access ANY transport polymorphically
   let server = ctx.getServer()
-  let transport = if server != nil: server.getTransport() else: nil  # 🎉 Works for all!
+  if server == nil:
+    echo "   ⚠️  No server available"
+    return McpToolResult(content: @[createTextContent("Error: No server available")])
   
-  if transport == nil:
+  if not server.transport.isSome:
     echo "   ⚠️  No transport available"
     return McpToolResult(content: @[createTextContent("Error: No transport available")])
   
-  let transportKind = transport.getTransportKind()
+  var transport = server.transport.get()
+  let transportKind = transport.kind
   echo fmt"   📡 Using transport: {transportKind} for progress streaming"
   
   # Send start event using polymorphic API
@@ -124,12 +130,14 @@ proc universalBroadcastTool(ctx: McpRequestContext, args: JsonNode): McpToolResu
   
   # Get transport without knowing its type
   let server = ctx.getServer()
-  let transport = if server != nil: server.getTransport() else: nil
+  if server == nil:
+    return McpToolResult(content: @[createTextContent("Error: No server available")])
   
-  if transport == nil:
+  if not server.transport.isSome:
     return McpToolResult(content: @[createTextContent("Error: No transport available")])
   
-  let transportKind = transport.getTransportKind()
+  var transport = server.transport.get()
+  let transportKind = transport.kind
   
   # Broadcast using universal API
   let eventData = %*{
@@ -317,15 +325,13 @@ when isMainModule:
     echo "🌐 Selected: WebSocket Transport"
     echo "   📡 Bidirectional real-time communication"
     echo "   🔗 Connect: ws://127.0.0.1:8080/"
-    let transport = newWebSocketTransport(server, port = 8080, host = "127.0.0.1")
-    server.setTransport(transport)
+    server.setWebSocketTransport(port = 8080, host = "127.0.0.1")
   else: # default to SSE
     echo "📡 Selected: SSE (Server-Sent Events) Transport"  
     echo "   📨 Server-to-client events with HTTP requests"
     echo "   🔗 Stream: http://127.0.0.1:8080/sse"
     echo "   📮 Messages: http://127.0.0.1:8080/messages"
-    let transport = newSseTransport(server, port = 8080, host = "127.0.0.1")
-    server.setTransport(transport)
+    server.setSseTransport(port = 8080, host = "127.0.0.1")
   
   echo ""
   echo "✨ Key Innovation: ALL tools work with BOTH transports!"
@@ -439,19 +445,8 @@ when isMainModule:
   echo ""
   echo "🚀 Starting polymorphic server..."
   
-  # Start the selected transport
-  let transport = server.getTransport()
-  if transport != nil:
-    case transport.getTransportKind():
-    of tkSSE:
-      let sseTransport = server.getTransport(SseTransport)
-      if sseTransport != nil:
-        sseTransport.start()
-    of tkWebSocket:
-      let wsTransport = server.getTransport(WebSocketTransport)
-      if wsTransport != nil:
-        wsTransport.start()
-    else:
-      echo "❌ Unknown transport type"
-  else:
-    echo "❌ No transport configured"
+  # Start the server using unified run method
+  try:
+    server.run()  # 🚀 Unified interface - no transport-specific code needed!
+  except ValueError as e:
+    echo fmt"❌ Error starting server: {e.msg}"

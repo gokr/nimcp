@@ -11,7 +11,7 @@ type
     id*: string
     authenticated*: bool
     
-  WebSocketTransport* = ref object of TransportInterface
+  WebSocketTransport* = ref object
     ## WebSocket transport implementation for MCP servers
     server: McpServer
     router: Router
@@ -32,8 +32,6 @@ proc newWebSocketTransport*(server: McpServer, port: int = 8080, host: string = 
     authConfig: authConfig,
     connectionPool: newConnectionPool[WebSocketConnection]()
   )
-  # Initialize transport interface capabilities
-  TransportInterface(transport).capabilities = {tcBroadcast, tcEvents, tcUnicast, tcBidirectional}
   return transport
 
 import random
@@ -218,42 +216,5 @@ proc getActiveConnectionCount*(transport: WebSocketTransport): int =
 
 # Note: Unified transport API methods are now implemented as polymorphic methods below
 
-# Clean API overloads that hide the casting
-proc setTransport*(server: McpServer, transport: WebSocketTransport) =
-  ## Set WebSocket transport with clean API (casting handled internally)
-  server.setWebSocketTransport(cast[pointer](transport))
-
-proc getTransport*(server: McpServer, transportType: typedesc[WebSocketTransport]): WebSocketTransport =
-  ## Get WebSocket transport with clean API (casting handled internally)  
-  let transportPtr = server.getWebSocketTransportPtr()
-  if transportPtr != nil:
-    return cast[WebSocketTransport](transportPtr)
-  else:
-    return nil
-
-# Polymorphic method implementations for TransportInterface
-method broadcastMessage*(transport: WebSocketTransport, jsonMessage: JsonNode) =
-  ## Polymorphic implementation - broadcast to all WebSocket clients
-  let messageStr = $jsonMessage
-  transport.broadcastToAll(messageStr)
-
-method sendEvent*(transport: WebSocketTransport, eventType: string, data: JsonNode, target: string = "") =
-  ## Polymorphic implementation - send custom event to WebSocket clients
-  ## Note: WebSocket doesn't have native event types like SSE, so we wrap in a JSON envelope
-  let eventMessage = %*{
-    "event": eventType,
-    "data": data
-  }
-  # Use the broadcast implementation directly to avoid recursion
-  let messageStr = $eventMessage
-  if target != "":
-    # Send to specific connection (if implemented)
-    transport.broadcastToAll(messageStr)
-  else:
-    # Broadcast to all
-    transport.broadcastToAll(messageStr)
-
-method getTransportKind*(transport: WebSocketTransport): TransportKind =
-  ## Polymorphic implementation - return WebSocket transport kind
-  return tkWebSocket
+# Transport operations are now handled by the unified polymorphic procedures in types.nim
 

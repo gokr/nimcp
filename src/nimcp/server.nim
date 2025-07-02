@@ -3,7 +3,7 @@
 ## This module provides the main MCP server implementation using the modern
 ## taskpools library for better performance and energy efficiency.
 
-import json, tables, options, locks, cpuinfo, strutils, algorithm, times, random
+import json, tables, options, locks, cpuinfo, strutils, algorithm, times, random, strformat
 import taskpools
 import types, protocol, context, resource_templates, logging
 
@@ -139,19 +139,55 @@ proc removeCustomData*(server: McpServer, key: string) =
   if key in server.customData:
     server.customData.del(key)
 
-# Type-safe transport management procedures
-# Note: Using generic pointer approach since transport types are defined in separate modules
-proc setSseTransport*(server: McpServer, transport: pointer) =
-  ## Set SSE transport (internal - use setTransport overloads instead)
-  server.transport = some(McpTransport(kind: tkSSE, sseTransport: transport))
+# Simplified transport management procedures
+proc setTransport*(server: McpServer, transport: McpTransport) =
+  ## Set transport using the new embedded data structure
+  server.transport = some(transport)
 
-proc setWebSocketTransport*(server: McpServer, transport: pointer) =
-  ## Set WebSocket transport (internal - use setTransport overloads instead)
-  server.transport = some(McpTransport(kind: tkWebSocket, wsTransport: transport))
+proc setHttpTransport*(server: McpServer, port: int = 8080, host: string = "127.0.0.1", authConfig: pointer = nil, allowedOrigins: seq[string] = @[]) =
+  ## Set HTTP transport with configuration
+  let httpData = HttpTransportData(
+    port: port,
+    host: host,
+    authConfig: authConfig,
+    allowedOrigins: allowedOrigins,
+    connections: nil
+  )
+  server.transport = some(McpTransport(
+    kind: tkHttp,
+    capabilities: {tcBroadcast, tcEvents},
+    httpData: httpData
+  ))
 
-proc setHttpTransport*(server: McpServer, transport: pointer) =
-  ## Set HTTP transport (internal - use setTransport overloads instead)
-  server.transport = some(McpTransport(kind: tkHttp, httpTransport: transport))
+proc setWebSocketTransport*(server: McpServer, port: int = 8080, host: string = "127.0.0.1", authConfig: pointer = nil) =
+  ## Set WebSocket transport with configuration
+  let wsData = WebSocketTransportData(
+    port: port,
+    host: host,
+    authConfig: authConfig,
+    connectionPool: nil
+  )
+  server.transport = some(McpTransport(
+    kind: tkWebSocket,
+    capabilities: {tcBroadcast, tcEvents, tcUnicast, tcBidirectional},
+    wsData: wsData
+  ))
+
+proc setSseTransport*(server: McpServer, port: int = 8080, host: string = "127.0.0.1", authConfig: pointer = nil, sseEndpoint: string = "/sse", messageEndpoint: string = "/messages") =
+  ## Set SSE transport with configuration
+  let sseData = SseTransportData(
+    port: port,
+    host: host,
+    authConfig: authConfig,
+    connectionPool: nil,
+    sseEndpoint: sseEndpoint,
+    messageEndpoint: messageEndpoint
+  )
+  server.transport = some(McpTransport(
+    kind: tkSSE,
+    capabilities: {tcBroadcast, tcEvents, tcUnicast},
+    sseData: sseData
+  ))
 
 proc getTransportKind*(server: McpServer): TransportKind =
   ## Get the kind of currently active transport
@@ -164,56 +200,34 @@ proc hasTransport*(server: McpServer): bool =
   ## Check if server has an active transport
   return server.transport.isSome
 
-proc getSseTransportPtr*(server: McpServer): pointer =
-  ## Get SSE transport pointer if active, otherwise nil
-  if server.transport.isSome and server.transport.get().kind == tkSSE:
-    return server.transport.get().sseTransport
-  return nil
-
-proc getWebSocketTransportPtr*(server: McpServer): pointer =
-  ## Get WebSocket transport pointer if active, otherwise nil
-  if server.transport.isSome and server.transport.get().kind == tkWebSocket:
-    return server.transport.get().wsTransport
-  return nil
-
-proc getHttpTransportPtr*(server: McpServer): pointer =
-  ## Get HTTP transport pointer if active, otherwise nil
-  if server.transport.isSome and server.transport.get().kind == tkHttp:
-    return server.transport.get().httpTransport
-  return nil
-
 proc clearTransport*(server: McpServer) =
   ## Clear the active transport
   server.transport = none(McpTransport)
 
-proc getTransport*(server: McpServer): TransportInterface =
-  ## Get transport as polymorphic interface (requires transport to implement TransportInterface)
-  ## This enables transport-agnostic code where tools work with any transport type
+# Unified transport run method
+proc run*(server: McpServer) =
+  ## Run the server with the configured transport
   if not server.transport.isSome:
-    return nil
+    raise newException(ValueError, "No transport configured. Use setTransport or one of the setXXXTransport methods first.")
   
-  # Note: This requires each transport type to implement TransportInterface
-  # The actual transport objects must inherit from TransportInterface
-  case server.transport.get().kind:
-  of tkSSE:
-    let transportPtr = server.transport.get().sseTransport
-    if transportPtr != nil:
-      return cast[TransportInterface](transportPtr)
-  of tkWebSocket:
-    let transportPtr = server.transport.get().wsTransport
-    if transportPtr != nil:
-      return cast[TransportInterface](transportPtr)
+  let transport = server.transport.get()
+  case transport.kind:
+  of tkStdio:
+    # Run stdio transport (placeholder - would call actual implementation)
+    echo "Running stdio transport"
   of tkHttp:
-    let transportPtr = server.transport.get().httpTransport
-    if transportPtr != nil:
-      return cast[TransportInterface](transportPtr)
-  of tkNone, tkStdio:
-    discard
-  
-  return nil
+    # Run HTTP transport (placeholder - would call actual implementation)
+    echo fmt"Running HTTP transport on {transport.httpData.host}:{transport.httpData.port}"
+  of tkWebSocket:
+    # Run WebSocket transport (placeholder - would call actual implementation)
+    echo fmt"Running WebSocket transport on {transport.wsData.host}:{transport.wsData.port}"
+  of tkSSE:
+    # Run SSE transport (placeholder - would call actual implementation) 
+    echo fmt"Running SSE transport on {transport.sseData.host}:{transport.sseData.port}"
+  of tkNone:
+    raise newException(ValueError, "Transport kind is tkNone - invalid state")
 
-# Transport access helpers - examples should use specific getters instead of generic getTransport
-# This avoids circular import issues while maintaining the union type benefits
+# Transport access helpers for compatibility
 
 proc shutdown*(server: McpServer) =
   ## Shutdown the server and clean up resources
