@@ -1,5 +1,20 @@
-## Resource URI Template Implementation for NimCP
-## Provides support for dynamic resource URIs with parameter extraction
+## This module implements a powerful system for handling dynamic, templated
+## resource URIs, a core feature for creating RESTful and resource-oriented
+## MCP servers.
+##
+## It allows defining resource paths with named parameters, such as
+## `/users/{id}/documents/{docId}`, and provides the machinery to:
+##
+## 1.  **Compile** these URI templates into efficient regular expression matchers.
+## 2.  **Match** incoming resource request URIs against the compiled templates.
+## 3.  **Extract** parameter values (e.g., `id` and `docId`) from the URI.
+## 4.  **Register** handler procedures that are executed when a template is matched.
+## 5.  **Dispatch** requests to the appropriate handler, passing the extracted
+##     parameters.
+##
+## The system supports both simple handlers and context-aware handlers that
+## receive the full `McpRequestContext`. This enables flexible and powerful
+## resource management for complex applications.
 
 import tables, strutils, re, options
 import types, context

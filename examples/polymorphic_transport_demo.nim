@@ -286,7 +286,7 @@ This is the **ultimate MCP transport architecture** - true write-once, run-anywh
 **Transport Detection**: Tools can optionally check transport capabilities:
 ```nim
 let transport = server.getTransport()
-let kind = transport.getTransportKind()  # tkSSE, tkWebSocket, etc.
+let kind = transport.kind                 # tkSSE, tkWebSocket, etc.
 let caps = transport.capabilities         # tcBroadcast, tcEvents, etc.
 ```
 

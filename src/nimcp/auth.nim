@@ -1,3 +1,18 @@
+## This module provides types and procedures for handling authentication in MCP
+## servers, conforming to the MCP specification for Bearer token authentication.
+##
+## The core components are:
+## - `AuthConfig`: A configuration object that allows enabling or disabling
+##   authentication, setting a custom token validation procedure, and enforcing
+##   HTTPS.
+## - `TokenValidator`: A procedure type for custom token validation logic.
+## - `validateRequest`: The main procedure that inspects an incoming HTTP
+##   request, extracts the Bearer token, and performs validation according to
+##   the provided `AuthConfig`.
+##
+## This module is used by transports that support authentication (like HTTP-based
+## transports) to secure access to the MCP server.
+
 import options, tables, mummy, strutils
 
 type

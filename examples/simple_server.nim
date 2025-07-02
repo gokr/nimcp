@@ -54,6 +54,4 @@ proc infoHandler(uri: string): McpResourceContents =
 
 server.registerResource(infoResource, infoHandler)
 
-# Run the server
-when isMainModule:
-  server.runStdio()
+server.runStdio()

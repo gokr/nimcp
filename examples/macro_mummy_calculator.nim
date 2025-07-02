@@ -61,19 +61,18 @@ mcpServer("macro-mummy-calculator", "1.0.0"):
           res *= i
         return fmt"Result: {res}"
 
-when isMainModule:
-  echo "Starting Macro Mummy Calculator MCP Server..."
-  echo "This server uses macros for automatic tool generation and HTTP transport"
-  echo ""
-  echo "Test with curl:"
-  echo """curl -X POST http://127.0.0.1:8080 \"""
-  echo """  -H "Content-Type: application/json" \"""
-  echo """  -d '{"jsonrpc":"2.0","id":"1","method":"tools/list","params":{}}'"""
-  echo ""
-  echo """curl -X POST http://127.0.0.1:8080 \"""
-  echo """  -H "Content-Type: application/json" \"""
-  echo """  -d '{"jsonrpc":"2.0","id":"2","method":"tools/call","params":{"name":"add","arguments":{"a":5.5,"b":3.2}}}'"""
-  echo ""
-  
-  # Use the unified transport API with HTTP configuration  
-  runServer(HttpTransport(8080, "127.0.0.1"))
+echo "Starting Macro Mummy Calculator MCP Server..."
+echo "This server uses macros for automatic tool generation and HTTP transport"
+echo ""
+echo "Test with curl:"
+echo """curl -X POST http://127.0.0.1:8080 \"""
+echo """  -H "Content-Type: application/json" \"""
+echo """  -d '{"jsonrpc":"2.0","id":"1","method":"tools/list","params":{}}'"""
+echo ""
+echo """curl -X POST http://127.0.0.1:8080 \"""
+echo """  -H "Content-Type: application/json" \"""
+echo """  -d '{"jsonrpc":"2.0","id":"2","method":"tools/call","params":{"name":"add","arguments":{"a":5.5,"b":3.2}}}'"""
+echo ""
+
+# Use the unified transport API with HTTP configuration  
+currentMcpServer.runHttp(8080, "127.0.0.1")

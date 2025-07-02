@@ -1,3 +1,13 @@
+## This module provides a generic, thread-safe connection pool.
+##
+## The `ConnectionPool` type manages a collection of connections of any type `T`,
+## where each connection is identified by a unique string ID. All operations
+## that access the underlying connection table are protected by a lock to
+## ensure safe concurrent access from multiple threads.
+##
+## It is used by transports that handle multiple client connections, such as
+## WebSocket or SSE, to keep track of active connections.
+
 import tables, locks, options
 
 type
@@ -31,13 +41,6 @@ iterator connections*[T](pool: ConnectionPool[T]): T =
   withLock pool.lock:
     for connection in pool.connections.values:
       yield connection
-
-proc getAllConnections*[T](pool: ConnectionPool[T]): seq[T] =
-  ## Legacy method that returns all connections as a sequence
-  ## Consider using the connections() iterator for better performance
-  withLock pool.lock:
-    for connection in pool.connections.values:
-      result.add(connection)
 
 proc connectionCount*[T](pool: ConnectionPool[T]): int =
   withLock pool.lock:

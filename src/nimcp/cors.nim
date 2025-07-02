@@ -1,3 +1,15 @@
+## This module provides helper procedures for generating Cross-Origin Resource
+## Sharing (CORS) headers.
+##
+## CORS is a mechanism that uses additional HTTP headers to tell browsers to give
+## a web application running at one origin, access to selected resources from a
+## different origin. This is essential for MCP transports that are intended to be
+## used by web-based clients, such as those using SSE or WebSockets from a
+## browser.
+##
+## The procedures in this module simplify the creation of common CORS header
+## configurations.
+
 import mummy
 
 proc defaultCorsHeaders*(): HttpHeaders =

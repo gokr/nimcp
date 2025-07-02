@@ -1,5 +1,43 @@
-## WebSocket transport for MCP servers using Mummy
-## Provides real-time bidirectional communication with JSON-RPC 2.0 over WebSocket
+
+
+## WebSocket Transport Implementation for MCP Servers
+##
+## This module provides a WebSocket-based transport layer for Model Context Protocol (MCP) servers.
+## It enables real-time, bidirectional communication between MCP clients and servers over WebSocket
+## connections, built on top of the Mummy web framework.
+##
+## Key Features:
+## - **WebSocket Communication**: Full-duplex communication for real-time MCP interactions
+## - **JSON-RPC Protocol**: Handles JSON-RPC 2.0 messages over WebSocket connections
+## - **Connection Management**: Maintains a pool of active WebSocket connections with unique IDs
+## - **Authentication Support**: Integrates with the auth module for Bearer token authentication
+## - **CORS Support**: Handles cross-origin requests for web-based MCP clients
+## - **Dual Endpoints**: Supports both WebSocket upgrades and HTTP info requests on the same endpoint
+## - **Error Handling**: Robust error handling with proper JSON-RPC error responses
+## - **Broadcasting**: Ability to broadcast messages to all connected clients
+##
+## Usage:
+## ```nim
+## let server = newMcpServer("MyServer", "1.0.0")
+## # Add tools and resources to server...
+##
+## # Run with default settings
+## server.runWebSocket()
+##
+## # Or with custom configuration
+## let authConfig = newAuthConfig(enabled = true, bearerToken = "secret")
+## server.runWebSocket(port = 8080, host = "0.0.0.0", authConfig = authConfig)
+## ```
+##
+## The transport automatically handles:
+## - WebSocket handshake and upgrade from HTTP
+## - Connection lifecycle (open, message, close, error events)
+## - JSON-RPC message parsing and response formatting
+## - Authentication validation during connection establishment
+## - Connection cleanup on errors or disconnections
+##
+## Clients can connect using standard WebSocket libraries and send JSON-RPC 2.0 formatted
+## messages to interact with the MCP server's tools and resources.
 
 import mummy, mummy/routers, json, strutils, strformat, options, tables, locks
 import server, types, protocol
@@ -213,8 +251,3 @@ proc broadcastToAll*(transport: WebSocketTransport, message: string) =
 proc getActiveConnectionCount*(transport: WebSocketTransport): int =
   ## Get the number of active WebSocket connections
   transport.connectionPool.connectionCount()
-
-# Note: Unified transport API methods are now implemented as polymorphic methods below
-
-# Transport operations are now handled by the unified polymorphic procedures in types.nim
-

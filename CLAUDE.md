@@ -171,7 +171,6 @@ proc universalTool(ctx: McpRequestContext, args: JsonNode): McpToolResult =
   if not server.transport.isSome:
     return McpToolResult(content: @[createTextContent("No transport available")])
   
-  # Direct access to transport - no casting needed!
   var transport = server.transport.get()
   let kind = transport.kind  # Direct field access
   
