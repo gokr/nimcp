@@ -54,4 +54,5 @@ proc infoHandler(uri: string): McpResourceContents =
 
 server.registerResource(infoResource, infoHandler)
 
-server.runStdio()
+import ../src/nimcp/stdio_transport
+serve(server)

@@ -9,7 +9,7 @@ type
     ## Manages request contexts across the server
     contexts: Table[string, McpRequestContext]
     contextLock: Lock
-    defaultTimeout: int  # milliseconds
+    defaultTimeout: int = 30000  # milliseconds
     
   RequestCancellation* = object of CatchableError
     ## Exception raised when a request is cancelled
@@ -17,17 +17,8 @@ type
   RequestTimeout* = object of CatchableError
     ## Exception raised when a request times out
 
-var globalContextManager*: ContextManager
-
-# Initialize the global context manager
-proc initContextManager*() =
-  ## Initialize the global context manager
-  if globalContextManager == nil:
-    globalContextManager = ContextManager(
-      contexts: initTable[string, McpRequestContext](),
-      defaultTimeout: 30000  # 30 seconds default
-    )
-    initLock(globalContextManager.contextLock)
+var globalContextManager* = ContextManager()
+initLock(globalContextManager.contextLock)
 
 proc newMcpRequestContext*(requestId: string = ""): McpRequestContext =
   ## Create a new request context with unique ID (for backward compatibility)
@@ -45,26 +36,16 @@ proc newMcpRequestContext*(requestId: string = ""): McpRequestContext =
 
 
 proc registerContext*(ctx: McpRequestContext) =
-  ## Register a context with the context manager
-  if globalContextManager == nil:
-    initContextManager()
-  
+  ## Register a context with the context manager  
   withLock globalContextManager.contextLock:
     globalContextManager.contexts[ctx.requestId] = ctx
 
 proc unregisterContext*(requestId: string) =
-  ## Unregister a context from the context manager
-  if globalContextManager == nil:
-    return
-    
   withLock globalContextManager.contextLock:
     globalContextManager.contexts.del(requestId)
 
 proc getContext*(requestId: string): Option[McpRequestContext] =
-  ## Get a context by request ID
-  if globalContextManager == nil:
-    return none(McpRequestContext)
-    
+  ## Get a context by ID
   withLock globalContextManager.contextLock:
     if requestId in globalContextManager.contexts:
       return some(globalContextManager.contexts[requestId])
@@ -212,22 +193,15 @@ proc createLogCallback*(onLog: proc(level: string, message: string) {.gcsafe.}):
 # Timeout management
 proc setDefaultTimeout*(timeoutMs: int) =
   ## Set the default timeout for all requests
-  if globalContextManager == nil:
-    initContextManager()
   globalContextManager.defaultTimeout = timeoutMs
 
 proc getDefaultTimeout*(): int =
   ## Get the default timeout
-  if globalContextManager == nil:
-    return 30000
   return globalContextManager.defaultTimeout
 
 # Context cleanup utilities
 proc cleanupExpiredContexts*() =
   ## Clean up contexts that have been around too long
-  if globalContextManager == nil:
-    return
-    
   let cutoff = now() - initDuration(hours = 1)  # Clean up contexts older than 1 hour
   var toRemove: seq[string] = @[]
   
@@ -238,6 +212,3 @@ proc cleanupExpiredContexts*() =
     
     for id in toRemove:
       globalContextManager.contexts.del(id)
-
-# Initialize on module load
-initContextManager()

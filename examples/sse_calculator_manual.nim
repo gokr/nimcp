@@ -161,4 +161,5 @@ when isMainModule:
   echo ""
   
   # Create and start SSE transport
-  server.runSse(8080, "127.0.0.1")
+  let transport = newSseTransport(8080, "127.0.0.1")
+  transport.serve(server)

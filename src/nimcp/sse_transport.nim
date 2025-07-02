@@ -1,15 +1,56 @@
-## Server-Sent Events (SSE) transport for MCP servers using Mummy
-## Implements the MCP SSE transport specification with bidirectional communication:
-## - Server-to-client: SSE event stream
-## - Client-to-server: HTTP POST requests
-## 
-## Note: SSE transport is deprecated in MCP specification as of 2024-11-05. 
-## The preferred transport is now Streamable HTTP (see mummy_transport.nim).
-## SSE transport is maintained for backwards compatibility with existing clients.
+## Server-Sent Events (SSE) Transport Implementation for MCP Servers
 ##
-## Future Enhancement: Support for simultaneous multiple transports would allow
-## clients to choose their preferred transport (stdio, HTTP, WebSocket, SSE)
-## from a single server instance.
+## This module provides a Server-Sent Events (SSE) based transport layer for Model Context Protocol (MCP) servers.
+## It implements bidirectional communication using SSE for server-to-client messaging and HTTP POST for client-to-server
+## requests, built on top of the Mummy web framework.
+##
+## **DEPRECATION NOTICE**: SSE transport is deprecated in the MCP specification as of 2024-11-05.
+## The preferred transport is now Streamable HTTP (see [`mummy_transport.nim`](mummy_transport.nim:1)).
+## This transport is maintained for backwards compatibility with existing clients.
+##
+## Key Features:
+## - **Bidirectional Communication**: SSE event stream for server-to-client, HTTP POST for client-to-server
+## - **Real-time Updates**: Server can push notifications and responses to clients via SSE
+## - **Connection Management**: Maintains a pool of active SSE connections with unique IDs
+## - **Authentication Support**: Integrates with the auth module for Bearer token authentication
+## - **CORS Support**: Handles cross-origin requests for web-based MCP clients
+## - **Endpoint Configuration**: Customizable SSE and message endpoint paths
+## - **Error Handling**: Robust error handling with proper JSON-RPC error responses
+## - **Broadcasting**: Ability to broadcast messages to all connected SSE clients
+##
+## Communication Flow:
+## 1. **Client connects** to SSE endpoint (`/sse` by default) to establish event stream
+## 2. **Server sends** initial endpoint event with message endpoint URL
+## 3. **Client sends** JSON-RPC requests via HTTP POST to message endpoint (`/messages` by default)
+## 4. **Server responds** by broadcasting JSON-RPC responses via SSE to all connected clients
+## 5. **HTTP POST** returns 204 No Content (responses are delivered via SSE only)
+##
+## Usage:
+## ```nim
+## let server = newMcpServer("MyServer", "1.0.0")
+## # Add tools and resources to server...
+##
+## # Run with default settings
+## server.runSse()
+##
+## # Or with custom configuration
+## let authConfig = newAuthConfig(enabled = true, bearerToken = "secret")
+## server.runSse(port = 8080, host = "0.0.0.0", authConfig = authConfig)
+##
+## # Or with custom endpoints
+## let transport = newSseTransport(server, sseEndpoint = "/events", messageEndpoint = "/rpc")
+## transport.start()
+## ```
+##
+## The transport automatically handles:
+## - SSE connection establishment and lifecycle management
+## - Authentication validation for both SSE and message endpoints
+## - JSON-RPC message parsing and response broadcasting
+## - Connection cleanup on errors or server shutdown
+## - CORS preflight requests for web-based clients
+##
+## **Future Enhancement**: Support for simultaneous multiple transports would allow
+## clients to choose their preferred transport (stdio, HTTP, WebSocket, SSE) from a single server instance.
 
 import mummy, mummy/routers, mummy/common, json, strutils, strformat, options, tables, locks, random
 import server, types, protocol
@@ -23,7 +64,6 @@ type
     
   SseTransport* = ref object
     ## SSE transport implementation for MCP servers
-    server: McpServer
     router: Router
     httpServer: Server
     port*: int
@@ -33,13 +73,12 @@ type
     sseEndpoint*: string
     messageEndpoint*: string
 
-proc newSseTransport*(server: McpServer, port: int = 8080, host: string = "127.0.0.1", 
+proc newSseTransport*(port: int = 8080, host: string = "127.0.0.1", 
                       authConfig: AuthConfig = newAuthConfig(),
                       sseEndpoint: string = "/sse", 
                       messageEndpoint: string = "/messages"): SseTransport =
   ## Create a new SSE transport instance
   var transport = SseTransport(
-    server: server,
     router: Router(),
     port: port,
     host: host,
@@ -84,7 +123,7 @@ proc broadcastSseMessage(transport: SseTransport, jsonMessage: JsonNode) =
   for connection in transport.connectionPool.connections():
     sendSseMessage(connection, jsonMessage)
 
-proc setupRoutes(transport: SseTransport) =
+proc setupRoutes(transport: SseTransport, server: McpServer) =
   ## Setup SSE and message handling routes
   
   # SSE endpoint - establishes server-to-client stream
@@ -157,7 +196,7 @@ proc setupRoutes(transport: SseTransport) =
       let jsonRpcRequest = parseJsonRpcMessage(request.body)
       
       # Use the existing server's request handler
-      let response = transport.server.handleRequest(jsonRpcRequest)
+      let response = server.handleRequest(jsonRpcRequest)
       
       # Send response back via SSE to all connections
       # Per MCP specification, tool responses should only be sent via SSE events
@@ -198,9 +237,9 @@ proc setupRoutes(transport: SseTransport) =
     request.respond(200, headers = headers)
   )
 
-proc start*(transport: SseTransport) =
-  ## Start the SSE transport server
-  setupRoutes(transport)
+proc serve*(transport: SseTransport, server: McpServer) =
+  ## Serve the SSE transport server
+  setupRoutes(transport, server)
   
   transport.httpServer = newServer(transport.router)
   
@@ -235,9 +274,5 @@ proc getActiveConnectionCount*(transport: SseTransport): int =
 
 # Note: Object variant transport system handles polymorphic operations via types.nim
 
-proc runSse*(server: McpServer, port: int = 8080, host: string = "127.0.0.1", authConfig: AuthConfig = newAuthConfig()) =
-  ## Convenience function to run an MCP server over SSE transport
-  let transport = newSseTransport(server, port, host, authConfig)
-  transport.start()
 
 

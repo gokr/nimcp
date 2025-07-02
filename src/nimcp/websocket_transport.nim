@@ -51,7 +51,6 @@ type
     
   WebSocketTransport* = ref object
     ## WebSocket transport implementation for MCP servers
-    server: McpServer
     router: Router
     httpServer: Server
     port*: int
@@ -60,10 +59,9 @@ type
     connectionPool: ConnectionPool[WebSocketConnection]
 
 # Reuse authentication types from mummy_transport
-proc newWebSocketTransport*(server: McpServer, port: int = 8080, host: string = "127.0.0.1", authConfig: AuthConfig = newAuthConfig()): WebSocketTransport =
+proc newWebSocketTransport*(port: int = 8080, host: string = "127.0.0.1", authConfig: AuthConfig = newAuthConfig()): WebSocketTransport =
   ## Create a new WebSocket transport instance
   var transport = WebSocketTransport(
-    server: server,
     router: Router(),
     port: port,
     host: host,
@@ -79,7 +77,7 @@ proc generateConnectionId(): string =
   return $rand(int.high)
 
 
-proc handleJsonRpcMessage(transport: WebSocketTransport, websocket: WebSocket, message: string) {.gcsafe.} =
+proc handleJsonRpcMessage(transport: WebSocketTransport, server: McpServer, websocket: WebSocket, message: string) {.gcsafe.} =
   ## Handle incoming WebSocket JSON-RPC message
   try:
     if message.len == 0:
@@ -92,11 +90,11 @@ proc handleJsonRpcMessage(transport: WebSocketTransport, websocket: WebSocket, m
     
     # Handle notifications (no response expected)
     if jsonRpcRequest.id.isNone:
-      transport.server.handleNotification(jsonRpcRequest)
+      server.handleNotification(jsonRpcRequest)
       return
     
     # Handle requests that expect responses
-    let response = transport.server.handleRequest(jsonRpcRequest)
+    let response = server.handleRequest(jsonRpcRequest)
     
     # Send response back through WebSocket
     var responseJson = newJObject()
@@ -117,7 +115,7 @@ proc handleJsonRpcMessage(transport: WebSocketTransport, websocket: WebSocket, m
     let errorResponse = createInternalError(JsonRpcId(kind: jridString, str: ""), e.msg)
     websocket.send($(%errorResponse))
 
-proc websocketEventHandler(transport: WebSocketTransport, websocket: WebSocket, event: WebSocketEvent, message: Message) {.gcsafe.} =
+proc websocketEventHandler(transport: WebSocketTransport, server: McpServer, websocket: WebSocket, event: WebSocketEvent, message: Message) {.gcsafe.} =
   ## Handle WebSocket events according to Mummy's API
   case event:
   of OpenEvent:
@@ -132,7 +130,7 @@ proc websocketEventHandler(transport: WebSocketTransport, websocket: WebSocket, 
   of MessageEvent:
     # Handle JSON-RPC message
     if message.kind == TextMessage:
-      transport.handleJsonRpcMessage(websocket, message.data)
+      transport.handleJsonRpcMessage(server, websocket, message.data)
     
   of CloseEvent:
     # Find and remove connection
@@ -164,15 +162,15 @@ proc upgradeHandler(transport: WebSocketTransport, request: Request) {.gcsafe.} 
   # Upgrade to WebSocket - Mummy handles the upgrade internally
   discard request.upgradeToWebSocket()
 
-proc handleInfoRequest(transport: WebSocketTransport, request: Request) {.gcsafe.} =
+proc handleInfoRequest(transport: WebSocketTransport, server: McpServer, request: Request) {.gcsafe.} =
   ## Handle GET requests for server info
   let info = %*{
     "server": {
-      "name": transport.server.serverInfo.name,
-      "version": transport.server.serverInfo.version
+      "name": server.serverInfo.name,
+      "version": server.serverInfo.version
     },
     "transport": "websocket",
-    "capabilities": transport.server.capabilities,
+    "capabilities": server.capabilities,
     "websocket": {
       "endpoint": fmt"ws://{transport.host}:{transport.port}/",
       "authentication": transport.authConfig.enabled
@@ -184,7 +182,7 @@ proc handleInfoRequest(transport: WebSocketTransport, request: Request) {.gcsafe
   
   request.respond(200, headers, $info)
 
-proc setupRoutes(transport: WebSocketTransport) =
+proc setupRoutes(transport: WebSocketTransport, server: McpServer) =
   ## Set up WebSocket and HTTP routes
   
   # WebSocket/HTTP endpoint
@@ -192,7 +190,7 @@ proc setupRoutes(transport: WebSocketTransport) =
     if "Upgrade" in request.headers and request.headers["Upgrade"].toLowerAscii() == "websocket":
       transport.upgradeHandler(request)
     else:
-      transport.handleInfoRequest(request)
+      transport.handleInfoRequest(server, request)
   )
   
   # OPTIONS for CORS
@@ -201,13 +199,13 @@ proc setupRoutes(transport: WebSocketTransport) =
     request.respond(204, headers, "")
   )
 
-proc start*(transport: WebSocketTransport) =
-  ## Start the WebSocket server
-  transport.setupRoutes()
+proc serve*(transport: WebSocketTransport, server: McpServer) =
+  ## Serve the WebSocket server
+  transport.setupRoutes(server)
   
   # Create server with WebSocket handler
   let wsHandler = proc(websocket: WebSocket, event: WebSocketEvent, message: Message) {.gcsafe.} =
-    transport.websocketEventHandler(websocket, event, message)
+    transport.websocketEventHandler(server, websocket, event, message)
   
   transport.httpServer = newServer(transport.router, wsHandler)
   
@@ -231,13 +229,6 @@ proc shutdown*(transport: WebSocketTransport) =
       discard  # Ignore errors during shutdown
   transport.connectionPool = newConnectionPool[WebSocketConnection]()
 
-proc runWebSocket*(server: McpServer, port: int = 8080, host: string = "127.0.0.1", authConfig: AuthConfig = newAuthConfig()) =
-  ## Convenience function to run an MCP server over WebSocket
-  let transport = newWebSocketTransport(server, port, host, authConfig)
-  try:
-    transport.start()
-  finally:
-    transport.shutdown()
 
 proc broadcastToAll*(transport: WebSocketTransport, message: string) =
   ## Broadcast a message to all connected WebSocket clients

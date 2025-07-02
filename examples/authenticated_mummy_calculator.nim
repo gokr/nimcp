@@ -99,4 +99,5 @@ echo "  -d '{\"jsonrpc\":\"2.0\",\"method\":\"tools/call\",\"params\":{\"name\":
 echo ""
 
 # Start the authenticated HTTP server
-server.runHttp(8080, "127.0.0.1", authConfig)
+let transport = newMummyTransport(8080, "127.0.0.1", authConfig)
+transport.serve(server)

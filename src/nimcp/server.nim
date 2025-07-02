@@ -3,7 +3,7 @@
 ## This module provides the main MCP server implementation using the modern
 ## taskpools library for better performance and energy efficiency.
 
-import json, tables, options, locks, cpuinfo, strutils, algorithm, times, random, strformat
+import json, tables, options, locks, cpuinfo, strutils, algorithm, times, random
 import taskpools
 import types, protocol, context, resource_templates, logging
 
@@ -36,7 +36,6 @@ type
     requestTimeout*: int  # milliseconds
     enableContextLogging*: bool
     logger*: Logger
-    transport*: Option[McpTransport]  # Type-safe transport storage
     customData*: Table[string, pointer]  # Custom data storage for other use cases
 
   # Server composition types (moved from types.nim to avoid circular dependency)
@@ -76,7 +75,6 @@ proc newMcpServer*(name: string, version: string, numThreads: int = 0): McpServe
   result.enableContextLogging = false
   result.middleware = @[]
   result.resourceTemplates = newResourceTemplateRegistry()
-  result.transport = none(McpTransport)  # Initialize with no transport
   result.customData = initTable[string, pointer]()
   
   # Initialize logging with server-specific component name
@@ -88,12 +86,10 @@ proc newMcpServer*(name: string, version: string, numThreads: int = 0): McpServe
   let threads = if numThreads > 0: numThreads else: countProcessors()
   result.taskpool = Taskpool.new(numThreads = threads)
   
-  # Initialize the context manager
-  initContextManager()
-  
   # Log server initialization
   result.logger.info("MCP server initialized", 
     context = {"name": %name, "version": %version, "threads": %threads}.toTable)
+
 
 # Server-aware context creation
 proc newMcpRequestContextWithServer(server: McpServer, requestId: string = ""): McpRequestContext =
@@ -139,95 +135,13 @@ proc removeCustomData*(server: McpServer, key: string) =
   if key in server.customData:
     server.customData.del(key)
 
-# Simplified transport management procedures
-proc setTransport*(server: McpServer, transport: McpTransport) =
-  ## Set transport using the new embedded data structure
-  server.transport = some(transport)
 
-proc setHttpTransport*(server: McpServer, port: int = 8080, host: string = "127.0.0.1", authConfig: pointer = nil, allowedOrigins: seq[string] = @[]) =
-  ## Set HTTP transport with configuration
-  let httpData = HttpTransportData(
-    port: port,
-    host: host,
-    authConfig: authConfig,
-    allowedOrigins: allowedOrigins,
-    connections: nil
-  )
-  server.transport = some(McpTransport(
-    kind: tkHttp,
-    capabilities: {tcBroadcast, tcEvents},
-    httpData: httpData
-  ))
 
-proc setWebSocketTransport*(server: McpServer, port: int = 8080, host: string = "127.0.0.1", authConfig: pointer = nil) =
-  ## Set WebSocket transport with configuration
-  let wsData = WebSocketTransportData(
-    port: port,
-    host: host,
-    authConfig: authConfig,
-    connectionPool: nil
-  )
-  server.transport = some(McpTransport(
-    kind: tkWebSocket,
-    capabilities: {tcBroadcast, tcEvents, tcUnicast, tcBidirectional},
-    wsData: wsData
-  ))
 
-proc setSseTransport*(server: McpServer, port: int = 8080, host: string = "127.0.0.1", authConfig: pointer = nil, sseEndpoint: string = "/sse", messageEndpoint: string = "/messages") =
-  ## Set SSE transport with configuration
-  let sseData = SseTransportData(
-    port: port,
-    host: host,
-    authConfig: authConfig,
-    connectionPool: nil,
-    sseEndpoint: sseEndpoint,
-    messageEndpoint: messageEndpoint
-  )
-  server.transport = some(McpTransport(
-    kind: tkSSE,
-    capabilities: {tcBroadcast, tcEvents, tcUnicast},
-    sseData: sseData
-  ))
 
-proc getTransportKind*(server: McpServer): TransportKind =
-  ## Get the kind of currently active transport
-  if server.transport.isSome:
-    return server.transport.get().kind
-  else:
-    return tkNone
 
-proc hasTransport*(server: McpServer): bool =
-  ## Check if server has an active transport
-  return server.transport.isSome
 
-proc clearTransport*(server: McpServer) =
-  ## Clear the active transport
-  server.transport = none(McpTransport)
 
-# Unified transport run method
-proc run*(server: McpServer) =
-  ## Run the server with the configured transport
-  if not server.transport.isSome:
-    raise newException(ValueError, "No transport configured. Use setTransport or one of the setXXXTransport methods first.")
-  
-  let transport = server.transport.get()
-  case transport.kind:
-  of tkStdio:
-    # Run stdio transport (placeholder - would call actual implementation)
-    echo "Running stdio transport"
-  of tkHttp:
-    # Run HTTP transport (placeholder - would call actual implementation)
-    echo fmt"Running HTTP transport on {transport.httpData.host}:{transport.httpData.port}"
-  of tkWebSocket:
-    # Run WebSocket transport (placeholder - would call actual implementation)
-    echo fmt"Running WebSocket transport on {transport.wsData.host}:{transport.wsData.port}"
-  of tkSSE:
-    # Run SSE transport (placeholder - would call actual implementation) 
-    echo fmt"Running SSE transport on {transport.sseData.host}:{transport.sseData.port}"
-  of tkNone:
-    raise newException(ValueError, "Transport kind is tkNone - invalid state")
-
-# Transport access helpers for compatibility
 
 proc shutdown*(server: McpServer) =
   ## Shutdown the server and clean up resources
@@ -376,30 +290,6 @@ createFluentApi(withPromptContext, McpPrompt, McpPromptHandlerWithContext, regis
 createFluentApi(withResourceTemplate, McpResourceTemplate, ResourceTemplateHandler, registerResourceTemplate)
 createFluentApi(withResourceTemplateContext, McpResourceTemplate, ResourceTemplateHandlerWithContext, registerResourceTemplateWithContext)
 
-# Alternative UFCS style: object.registerWith(server, handler)
-
-# Generic UFCS template to reduce duplication
-template createUfcsApi(itemType: typedesc, handlerType: typedesc, registerProc: untyped): untyped =
-  proc registerWith*(item: itemType, server: McpServer, handler: handlerType): McpServer =
-    ## UFCS: Register this item with the server
-    registerProc(server, item, handler)
-    server
-
-template createUfcsContextApi(itemType: typedesc, handlerType: typedesc, registerProc: untyped): untyped =
-  proc registerWithContext*(item: itemType, server: McpServer, handler: handlerType): McpServer =
-    ## UFCS: Register this item with context support with the server
-    registerProc(server, item, handler)
-    server
-
-# Generate UFCS API functions using the templates
-createUfcsApi(McpTool, McpToolHandler, registerTool)
-createUfcsContextApi(McpTool, McpToolHandlerWithContext, registerToolWithContext)
-createUfcsApi(McpResource, McpResourceHandler, registerResource)
-createUfcsContextApi(McpResource, McpResourceHandlerWithContext, registerResourceWithContext)
-createUfcsApi(McpPrompt, McpPromptHandler, registerPrompt)
-createUfcsContextApi(McpPrompt, McpPromptHandlerWithContext, registerPromptWithContext)
-createUfcsApi(McpResourceTemplate, ResourceTemplateHandler, registerResourceTemplate)
-createUfcsContextApi(McpResourceTemplate, ResourceTemplateHandlerWithContext, registerResourceTemplateWithContext)
 
 # Middleware management
 proc registerMiddleware*(server: McpServer, middleware: McpMiddleware) =
@@ -782,76 +672,9 @@ proc handleRequest*(server: McpServer, request: JsonRpcRequest): JsonRpcResponse
     let error = newMcpStructuredError(InternalError, melCritical, "Internal error: " & e.msg, requestId = ctx.requestId)
     return JsonRpcResponse(jsonrpc: "2.0", id: id, error: some(error.toJsonRpcError()))
 
-# Thread-safe output handling
-var stdoutLock: Lock
-initLock(stdoutLock)
 
-proc safeEcho(msg: string) =
-  withLock stdoutLock:
-    echo msg
-    stdout.flushFile()
 
-# Global server pointer for taskpools (similar to threadpool approach)
-var globalServerPtr: ptr McpServer
 
-# Request processing task for taskpools - uses global pointer to avoid isolation issues
-proc processRequestTask(requestLine: string) {.gcsafe.} =
-  var requestId: JsonRpcId = JsonRpcId(kind: jridString, str: "")
-
-  try:
-    let request = parseJsonRpcMessage(requestLine)
-
-    if request.id.isSome:
-      requestId = request.id.get
-
-    if request.id.isNone:
-      globalServerPtr[].handleNotification(request)
-    else:
-      let response = globalServerPtr[].handleRequest(request)
-
-      # Create JSON response manually for thread safety
-      var responseJson = newJObject()
-      responseJson["jsonrpc"] = %response.jsonrpc
-      responseJson["id"] = %response.id
-      if response.result.isSome:
-        responseJson["result"] = response.result.get
-      if response.error.isSome:
-        let errorObj = newJObject()
-        errorObj["code"] = %response.error.get.code
-        errorObj["message"] = %response.error.get.message
-        if response.error.get.data.isSome:
-          errorObj["data"] = response.error.get.data.get
-        responseJson["error"] = errorObj
-      safeEcho($responseJson)
-  except Exception as e:
-    let errorResponse = createJsonRpcError(requestId, ParseError, "Parse error: " & e.msg)
-    safeEcho($(%errorResponse))
-
-# Modern stdio transport using taskpools
-proc runStdio*(server: McpServer) =
-  ## Run the MCP server with stdio transport using modern taskpools
-  globalServerPtr = addr server
-
-  while true:
-    try:
-      let line = stdin.readLine()
-      if line.len == 0:
-        break
-
-      # Spawn task using taskpools - returns void so no need to track
-      server.taskpool.spawn processRequestTask(line)
-
-    except EOFError:
-      # Sync all pending tasks before shutdown
-      server.taskpool.syncAll()
-      break
-    except Exception:
-      # Sync all pending tasks before shutdown
-      server.taskpool.syncAll()
-      break
-
-  # Wait for all remaining tasks and shutdown
-  server.shutdown()
 
 # Server Composition and Mounting functionality
 proc newMountPoint*(path: string, server: McpServer, prefix: Option[string] = none(string)): MountPoint =

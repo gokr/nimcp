@@ -19,7 +19,7 @@ suite "Polymorphic Transport Tests":
     check transport.kind == tkNone
     
     # Test direct access to transport kind
-    check getTransportKind(transport) == tkNone
+    check transport.kind == tkNone
 
   test "McpServer transport access - no transport set":
     let server = newMcpServer("test-server", "1.0.0")

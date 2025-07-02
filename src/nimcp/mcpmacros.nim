@@ -1,7 +1,7 @@
 ## Powerful macros for easy MCP server creation
 
-import macros, asyncdispatch, json, tables, options, strutils, typetraits
-import types, server, protocol, auth, mummy_transport, websocket_transport
+import macros, json, tables, options, strutils, typetraits
+import types, server, protocol
 
 # Helper to convert Nim types to JSON schema types
 proc nimTypeToJsonSchema(nimType: NimNode): JsonNode =
@@ -234,9 +234,9 @@ macro mcpTool*(procDef: untyped): untyped =
     # Add the original function definition first so it's available when the wrapper is compiled
     result.insert(1, actualProcDef)
     
-    # Register the context-aware tool
+    # Register the context-aware tool - will be injected into the server instance
     result.add(quote do:
-      currentMcpServer.registerToolWithContext(`toolIdent`, `wrapperName`)
+      mcpServerInstance.registerToolWithContext(`toolIdent`, `wrapperName`)
     )
   else:
     # Regular wrapper: proc(jsonArgs: JsonNode): McpToolResult
@@ -296,39 +296,34 @@ macro mcpTool*(procDef: untyped): untyped =
     # Add the original function definition first so it's available when the wrapper is compiled
     result.insert(1, actualProcDef)
     
-    # Register the regular tool
+    # Register the regular tool - will be injected into the server instance
     result.add(quote do:
-      currentMcpServer.registerTool(`toolIdent`, `wrapperName`)
+      mcpServerInstance.registerTool(`toolIdent`, `wrapperName`)
     )
 
-# Global server instance for macro access
-var currentMcpServer*: McpServer
-
-# Server creation template with advanced tool registration
-template mcpServer*(name: string, version: string, body: untyped): untyped =
-  let mcpServerInstance {.inject.} = newMcpServer(name, version)
-  currentMcpServer = mcpServerInstance
-  body
+# Server creation macro that returns a composable McpServer instance
+macro mcpServer*(name: string, version: string, body: untyped): untyped =
+  ## Create an MCP server with automatic tool registration from the body
+  ## Returns a McpServer instance that can be composed with other servers
   
-  proc runServer*(transport: McpTransportConfig = StdioTransport()) =
-    case transport.kind:
-    of mtStdio:
-      mcpServerInstance.runStdio()
-    of mtHttp:
-      let authConfig = if transport.tokenValidator != nil:
-                        newAuthConfig(transport.tokenValidator, transport.requireHttps)
-                      else:
-                        newAuthConfig()
-      mcpServerInstance.runHttp(transport.port, transport.host, authConfig)
-    of mtWebSocket:
-      let authConfig = if transport.wsTokenValidator != nil:
-                        newAuthConfig(transport.wsTokenValidator, transport.wsRequireHttps)
-                      else:
-                        newAuthConfig()
-      mcpServerInstance.runWebSocket(transport.wsPort, transport.wsHost, authConfig)
-  
-  #when isMainModule:
-  #  runServer()
+  # Wrap everything in a block to create isolated scope
+  result = nnkBlockStmt.newTree(
+    newEmptyNode(),  # No block label
+    nnkStmtList.newTree(
+      # Create the server instance
+      nnkLetSection.newTree(
+        nnkIdentDefs.newTree(
+          ident("mcpServerInstance"),
+          newEmptyNode(),
+          newCall("newMcpServer", name, version)
+        )
+      ),
+      # Add the body (which will contain mcpTool registrations)
+      body,
+      # Return the server instance
+      ident("mcpServerInstance")
+    )
+  )
 
 
 # Simple resource registration template  
@@ -339,7 +334,7 @@ template mcpResource*(uri: string, name: string, description: string, handler: u
     description: some(description)
   )
   
-  proc resourceHandler(uriParam: string): Future[McpResourceContents] {.async.} =
+  proc resourceHandler(uriParam: string): McpResourceContents =
     let content = handler(uriParam)
     return McpResourceContents(
       uri: uriParam,
@@ -356,7 +351,7 @@ template mcpPrompt*(name: string, description: string, arguments: seq[McpPromptA
     arguments: arguments
   )
   
-  proc promptHandler(nameParam: string, args: Table[string, JsonNode]): Future[McpGetPromptResult] {.async.} =
+  proc promptHandler(nameParam: string, args: Table[string, JsonNode]): McpGetPromptResult =
     let messages = handler(nameParam, args)
     return McpGetPromptResult(messages: messages)
   

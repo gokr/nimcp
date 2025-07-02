@@ -1,0 +1,37 @@
+{
+  "mcpServers": {
+    "authenticated_mummy_calculator": {
+      "type": "streamable-http",
+      "url": "http://localhost:8080",
+      "headers": {
+        "Authorization": "Bearer valid-token-123"
+      },
+      "disabled": false,
+      "disabledTools": []
+    },
+    "authenticated_websocket_calculator": {
+      "type": "websocket",
+      "url": "ws://localhost:8081",
+      "headers": {
+        "Authorization": "Bearer secret123"
+      },
+      "disabled": false,
+      "disabledTools": []
+    },
+    "calculator_server": {
+      "command": "/home/gokr/tankfeud/nimcp/examples/calculator_server",
+      "disabled": false,
+      "disabledTools": []
+    },
+    "enhanced_calculator": {
+      "command": "/home/gokr/tankfeud/nimcp/examples/enhanced_calculator",
+      "disabled": false,
+      "disabledTools": []
+    },
+    "macro_calculator": {
+      "command": "/home/gokr/tankfeud/nimcp/examples/macro_calculator",
+      "disabled": false,
+      "disabledTools": []
+    }
+  }
+}

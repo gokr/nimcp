@@ -2,9 +2,10 @@
 ## Demonstrates automatic tool generation from proc signatures
 
 import ../src/nimcp/mcpmacros
+import ../src/nimcp/stdio_transport
 import json, math, strformat
 
-mcpServer("macro-calculator", "1.0.0"):
+let server = mcpServer("macro-calculator", "1.0.0"):
   
   # This proc will be automatically converted to an MCP tool
   # Tool name: "add", schema generated from parameters, description from doc comment
@@ -62,4 +63,6 @@ mcpServer("macro-calculator", "1.0.0"):
         return fmt"Result: {res}"
 
 when isMainModule:
-  runServer()
+  # Create and start stdio transport
+  import ../src/nimcp/stdio_transport as stdio
+  stdio.serve(server)

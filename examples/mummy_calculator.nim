@@ -97,5 +97,6 @@ when isMainModule:
   echo """  -d '{"jsonrpc":"2.0","id":"2","method":"tools/call","params":{"name":"add","arguments":{"a":5.5,"b":3.2}}}'"""
   echo ""
   
-  # Use the new integrated HTTP transport
-  server.runHttp(8080, "127.0.0.1")
+  # Create and serve with HTTP transport
+  let transport = newMummyTransport(8080, "127.0.0.1")
+  transport.serve(server)

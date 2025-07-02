@@ -1,5 +1,62 @@
-## Mummy HTTP transport for MCP servers
-## Integrates fully with existing server.nim mechanisms
+## Streamable HTTP Transport Implementation for MCP Servers
+##
+## This module provides a Streamable HTTP transport layer for Model Context Protocol (MCP) servers,
+## implementing the modern MCP HTTP transport specification. It supports both traditional JSON responses
+## and Server-Sent Events (SSE) streaming based on client capabilities, built on top of the Mummy web framework.
+##
+## This is the **preferred transport** for MCP servers as of the MCP specification update in 2024-11-05,
+## replacing the deprecated SSE transport while maintaining backwards compatibility.
+##
+## Key Features:
+## - **Dual Response Modes**: Automatic detection of client capabilities for JSON or SSE streaming
+## - **Session Management**: Support for MCP session IDs via `Mcp-Session-Id` header
+## - **Authentication Support**: Integrates with the auth module for Bearer token authentication
+## - **CORS Support**: Comprehensive cross-origin request handling for web-based clients
+## - **DNS Rebinding Protection**: Origin validation to prevent DNS rebinding attacks
+## - **Content Negotiation**: Automatic response format selection based on `Accept` header
+## - **Error Handling**: Robust error handling with proper JSON-RPC error responses
+## - **Server Info Endpoint**: GET requests return server capabilities and transport information
+##
+## Transport Modes:
+## 1. **JSON Response Mode** (default): Traditional HTTP request-response with JSON payloads
+## 2. **SSE Streaming Mode**: Server-Sent Events for real-time response streaming (when client sends `Accept: text/event-stream`)
+##
+## Communication Flow:
+## - **GET /**: Returns server information, capabilities, and transport details
+## - **POST /**: Handles JSON-RPC requests with automatic response mode detection
+## - **OPTIONS /**: Handles CORS preflight requests
+##
+## Usage:
+## ```nim
+## let server = newMcpServer("MyServer", "1.0.0")
+## # Add tools and resources to server...
+##
+## # Run with default settings
+## server.runHttp()
+##
+## # Or with custom configuration
+## let authConfig = newAuthConfig(enabled = true, bearerToken = "secret")
+## let allowedOrigins = @["https://myapp.com", "https://localhost:3000"]
+## server.runHttp(port = 8080, host = "0.0.0.0", authConfig = authConfig, allowedOrigins = allowedOrigins)
+##
+## # Or create transport instance for more control
+## let transport = newMummyTransport(server, port = 8080, authConfig = authConfig)
+## transport.start()
+## ```
+##
+## Security Features:
+## - **Origin Validation**: Prevents DNS rebinding attacks by validating Origin header
+## - **Authentication**: Bearer token validation for protected endpoints
+## - **CORS Configuration**: Configurable allowed origins with secure defaults
+## - **Session Isolation**: Session ID support for multi-client scenarios
+##
+## The transport automatically handles:
+## - Client capability detection via Accept headers
+## - Response format selection (JSON vs SSE)
+## - Authentication validation and error responses
+## - CORS preflight and actual request handling
+## - Session management via custom headers
+## - Error formatting according to JSON-RPC 2.0 specification
 
 import mummy, mummy/routers, json, strutils, strformat, options, tables, times
 import server, types, protocol
@@ -7,7 +64,6 @@ import auth, cors  # Import shared modules
 
 type
   MummyTransport* = ref object
-    server: McpServer
     router: Router
     httpServer: Server
     port: int
@@ -16,10 +72,9 @@ type
     allowedOrigins*: seq[string]  # For DNS rebinding protection
     connections*: Table[string, Request]  # Active streaming connections
 
-proc newMummyTransport*(server: McpServer, port: int = 8080, host: string = "127.0.0.1", authConfig: AuthConfig = newAuthConfig(), allowedOrigins: seq[string] = @[]): MummyTransport =
+proc newMummyTransport*(port: int = 8080, host: string = "127.0.0.1", authConfig: AuthConfig = newAuthConfig(), allowedOrigins: seq[string] = @[]): MummyTransport =
   var defaultOrigins = if allowedOrigins.len == 0: @["http://localhost", "https://localhost", "http://127.0.0.1", "https://127.0.0.1"] else: allowedOrigins
   var transport = MummyTransport(
-    server: server,
     router: Router(),
     port: port,
     host: host,
@@ -54,7 +109,7 @@ proc validateAuthentication(transport: MummyTransport, request: Request): tuple[
   ## Validate authentication using shared auth module
   validateRequest(transport.authConfig, request)
 
-proc handleJsonRequest(transport: MummyTransport, request: Request, jsonRpcRequest: JsonRpcRequest, sessionId: string) {.gcsafe.} =
+proc handleJsonRequest(transport: MummyTransport, server: McpServer, request: Request, jsonRpcRequest: JsonRpcRequest, sessionId: string) {.gcsafe.} =
   ## Handle regular JSON response mode
   var headers = corsHeadersFor("POST, GET, OPTIONS")
   headers["Content-Type"] = "application/json"
@@ -63,7 +118,7 @@ proc handleJsonRequest(transport: MummyTransport, request: Request, jsonRpcReque
     headers["Mcp-Session-Id"] = sessionId
   
   # Use the existing server's request handler
-  let response = transport.server.handleRequest(jsonRpcRequest)
+  let response = server.handleRequest(jsonRpcRequest)
   
   # Only send a response if it's not empty (i.e., not a notification)
   if response.id.kind != jridString or response.id.str != "":
@@ -92,7 +147,7 @@ proc formatSseEvent(eventType: string, data: JsonNode, id: string = ""): string 
   lines.add("")  # Empty line terminates the event
   return lines.join("\n")
 
-proc handleStreamingRequest(transport: MummyTransport, request: Request, jsonRpcRequest: JsonRpcRequest, sessionId: string) {.gcsafe.} =
+proc handleStreamingRequest(transport: MummyTransport, server: McpServer, request: Request, jsonRpcRequest: JsonRpcRequest, sessionId: string) {.gcsafe.} =
   ## Handle SSE streaming mode
   var headers = corsHeadersFor("POST, GET, OPTIONS")
   headers["Content-Type"] = "text/event-stream"
@@ -104,7 +159,7 @@ proc handleStreamingRequest(transport: MummyTransport, request: Request, jsonRpc
     headers["Mcp-Session-Id"] = sessionId
   
   # Handle the request
-  let response = transport.server.handleRequest(jsonRpcRequest)
+  let response = server.handleRequest(jsonRpcRequest)
   
   # Send response as SSE event if not a notification
   if response.id.kind != jridString or response.id.str != "":
@@ -121,7 +176,7 @@ proc handleStreamingRequest(transport: MummyTransport, request: Request, jsonRpc
     # Since Mummy doesn't provide direct chunk writing, we'll send the entire SSE response
     request.respond(200, headers, eventData)
 
-proc handleMcpRequest(transport: MummyTransport, request: Request) {.gcsafe.} =
+proc handleMcpRequest(transport: MummyTransport, server: McpServer, request: Request) {.gcsafe.} =
   var headers = corsHeadersFor("POST, GET, OPTIONS")
   
   # DNS rebinding protection (skip for OPTIONS requests)
@@ -155,11 +210,11 @@ proc handleMcpRequest(transport: MummyTransport, request: Request) {.gcsafe.} =
       headers["Content-Type"] = "application/json"
       let info = %*{
         "server": {
-          "name": transport.server.serverInfo.name,
-          "version": transport.server.serverInfo.version
+          "name": server.serverInfo.name,
+          "version": server.serverInfo.version
         },
         "transport": "streamable-http",
-        "capabilities": transport.server.capabilities,
+        "capabilities": server.capabilities,
         "streaming": streamingSupported
       }
       if sessionId != "":
@@ -184,10 +239,10 @@ proc handleMcpRequest(transport: MummyTransport, request: Request) {.gcsafe.} =
         # Handle based on streaming support
         if streamingSupported:
           # SSE streaming mode
-          handleStreamingRequest(transport, request, jsonRpcRequest, sessionId)
+          handleStreamingRequest(transport, server, request, jsonRpcRequest, sessionId)
         else:
           # Regular JSON response mode
-          handleJsonRequest(transport, request, jsonRpcRequest, sessionId)
+          handleJsonRequest(transport, server, request, jsonRpcRequest, sessionId)
           
       except JsonParsingError as e:
         headers["Content-Type"] = "application/json"
@@ -204,15 +259,15 @@ proc handleMcpRequest(transport: MummyTransport, request: Request) {.gcsafe.} =
 # These functions were moved before handleMcpRequest
     # For now, we'll use the basic response mechanism
 
-proc setupRoutes(transport: MummyTransport) =
+proc setupRoutes(transport: MummyTransport, server: McpServer) =
   # Handle all MCP requests on the root path
-  transport.router.get("/", proc(request: Request) {.gcsafe.} = transport.handleMcpRequest(request))
-  transport.router.post("/", proc(request: Request) {.gcsafe.} = transport.handleMcpRequest(request))
-  transport.router.options("/", proc(request: Request) {.gcsafe.} = transport.handleMcpRequest(request))
+  transport.router.get("/", proc(request: Request) {.gcsafe.} = transport.handleMcpRequest(server, request))
+  transport.router.post("/", proc(request: Request) {.gcsafe.} = transport.handleMcpRequest(server, request))
+  transport.router.options("/", proc(request: Request) {.gcsafe.} = transport.handleMcpRequest(server, request))
 
-proc start*(transport: MummyTransport) =
-  ## Start the HTTP server and serve MCP requests
-  transport.setupRoutes()
+proc serve*(transport: MummyTransport, server: McpServer) =
+  ## Serve the HTTP server and serve MCP requests
+  transport.setupRoutes(server)
   transport.httpServer = newServer(transport.router)
   
   echo fmt"Starting MCP HTTP server at http://{transport.host}:{transport.port}"
@@ -220,9 +275,3 @@ proc start*(transport: MummyTransport) =
   
   transport.httpServer.serve(Port(transport.port), transport.host)
 
-proc runHttp*(server: McpServer, port: int = 8080, host: string = "127.0.0.1", authConfig: AuthConfig = newAuthConfig(), allowedOrigins: seq[string] = @[]) =
-  ## Convenience function to run an MCP server over Streamable HTTP
-  let transport = newMummyTransport(server, port, host, authConfig, allowedOrigins)
-  transport.start()
-
-# Transport operations are now handled by the unified polymorphic procedures in types.nim

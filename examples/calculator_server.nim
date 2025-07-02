@@ -89,4 +89,5 @@ server.registerResource(constantsResource, constantsHandler)
 
 # Run the server
 when isMainModule:
-  server.runStdio()
+  import ../src/nimcp/stdio_transport
+  serve(server)
