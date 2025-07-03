@@ -59,8 +59,7 @@
 ## - Error formatting according to JSON-RPC 2.0 specification
 
 import mummy, mummy/routers, json, strutils, strformat, options, tables, times
-import server, types, protocol
-import auth, cors  # Import shared modules
+import server, types, protocol, auth, cors, http_common
 
 type
   MummyTransport* = ref object

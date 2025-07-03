@@ -4,7 +4,7 @@
 import ../src/nimcp/mcpmacros
 import ../src/nimcp/server
 import ../src/nimcp/stdio_transport
-from ../src/nimcp/composed_server import newComposedServer, mountServerAt, ComposedServer, serve
+from ../src/nimcp/composed_server import newComposedServer, mountServerAt, ComposedServer, serve, getMountedServerInfo
 import json, math, strformat, os, strutils, options, tables
 
 # Calculator service using the macro system
@@ -139,4 +139,4 @@ when isMainModule:
   
   # Run the composed server using the new ComposedServer functionality
   let transport = newStdioTransport()
-  transport.serve(composedServer)
+  transport.serve(apiGateway)

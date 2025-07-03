@@ -459,7 +459,7 @@ proc handlePromptsGet(server: McpServer, params: JsonNode, ctx: McpRequestContex
       args[key] = value
 
   try:
-    let res = dispatch(server, promptsLock, server.contextAwarePromptHandlers, server.promptHandlers, promptName, ctx, args, "Prompt")
+    let res = dispatch(server, promptsLock, server.contextAwarePromptHandlers, server.promptHandlers, promptName, ctx, args, "Prompt", promptName)
     # Create response manually to avoid GC safety issues
     var responseJson = newJObject()
     if res.description.isSome:
