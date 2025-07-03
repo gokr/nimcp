@@ -4,7 +4,8 @@
 ## into a single server that can route requests to the appropriate mounted servers.
 
 import json, tables, options, strutils
-import types, protocol, context, server, stdio_transport
+import types, protocol, context, stdio_transport
+from server import handleToolsCall, handleResourcesRead, handlePromptsGet, newMcpServer, McpServer, getRegisteredToolNames, getRegisteredResourceUris, getRegisteredPromptNames, handleRequest
 
 type
   MountPoint* = object
@@ -166,20 +167,32 @@ proc getMountedServerInfo*(composed: ComposedServer): Table[string, JsonNode] =
 # ComposedServer JSON-RPC handlers
 proc handleToolsList*(composed: ComposedServer): JsonNode =
   ## Handle tools/list request by aggregating tools from all mounted servers
-  var allTools: seq[McpTool] = @[]
+  var allTools: seq[JsonNode] = @[]
   
   for mountPoint in composed.mountPoints:
     let server = mountPoint.server
-    let tools = server.getRegisteredToolNames()
     
-    for toolName in tools:
-      # Get the tool from the server and add prefix if needed
-      let tool = server.tools[toolName]  # Access internal tools table
-      var prefixedTool = tool
-      prefixedTool.name = addPrefix(tool.name, mountPoint.prefix)
-      allTools.add(prefixedTool)
+    # Get tools list from the server using its internal request handler
+    let toolsRequest = JsonRpcRequest(
+      jsonrpc: "2.0",
+      `method`: "tools/list",
+      id: some(JsonRpcId(kind: jridString, str: "tools_list")),
+      params: none(JsonNode)
+    )
+    let response = server.handleRequest(toolsRequest)
+    
+    if response.result.isSome:
+      let toolsData = response.result.get()
+      if toolsData.hasKey("tools"):
+        let tools = toolsData["tools"]
+        for toolJson in tools.getElems():
+          var prefixedTool = toolJson.copy()
+          let originalName = toolJson["name"].getStr()
+          let prefixedName = addPrefix(originalName, mountPoint.prefix)
+          prefixedTool["name"] = %prefixedName
+          allTools.add(prefixedTool)
   
-  return createToolsListResponseJson(allTools)
+  return %*{"tools": allTools}
 
 proc handleToolsCall*(composed: ComposedServer, params: JsonNode, ctx: McpRequestContext = nil): JsonNode =
   ## Handle tools/call request by routing to the appropriate mounted server
@@ -202,35 +215,38 @@ proc handleToolsCall*(composed: ComposedServer, params: JsonNode, ctx: McpReques
   var newParams = params.copy()
   newParams["name"] = %actualToolName
   
-  # Create a new request for the mounted server and route it
-  let newRequest = JsonRpcRequest(
-    jsonrpc: "2.0",
-    `method`: "tools/call",
-    id: some(JsonRpcId(kind: jridString, str: "tools_call")),  # Simple ID for internal routing
-    params: some(newParams)
-  )
-  let response = server.handleRequest(newRequest)
-  if response.result.isSome:
-    return response.result.get()
-  else:
-    raise newException(ValueError, "Tool call failed")
+  # Route directly to the server's tool call handler (bypassing JSON-RPC layer)
+  # This preserves the server's initialized state
+  return handleToolsCall(server, newParams, ctx)
 
 proc handleResourcesList*(composed: ComposedServer): JsonNode =
   ## Handle resources/list request by aggregating resources from all mounted servers
-  var allResources: seq[McpResource] = @[]
+  var allResources: seq[JsonNode] = @[]
   
   for mountPoint in composed.mountPoints:
     let server = mountPoint.server
-    let resources = server.getRegisteredResourceUris()
     
-    for uri in resources:
-      # Get the resource from the server and add prefix if needed
-      let resource = server.resources[uri]  # Access internal resources table
-      var prefixedResource = resource
-      prefixedResource.uri = addPrefix(resource.uri, mountPoint.prefix)
-      allResources.add(prefixedResource)
+    # Get resources list from the server using its internal request handler
+    let resourcesRequest = JsonRpcRequest(
+      jsonrpc: "2.0",
+      `method`: "resources/list",
+      id: some(JsonRpcId(kind: jridString, str: "resources_list")),
+      params: none(JsonNode)
+    )
+    let response = server.handleRequest(resourcesRequest)
+    
+    if response.result.isSome:
+      let resourcesData = response.result.get()
+      if resourcesData.hasKey("resources"):
+        let resources = resourcesData["resources"]
+        for resourceJson in resources.getElems():
+          var prefixedResource = resourceJson.copy()
+          let originalUri = resourceJson["uri"].getStr()
+          let prefixedUri = addPrefix(originalUri, mountPoint.prefix)
+          prefixedResource["uri"] = %prefixedUri
+          allResources.add(prefixedResource)
   
-  return createResourcesListResponseJson(allResources)
+  return %*{"resources": allResources}
 
 proc handleResourcesRead*(composed: ComposedServer, params: JsonNode, ctx: McpRequestContext = nil): JsonNode =
   ## Handle resources/read request by routing to the appropriate mounted server
@@ -253,35 +269,38 @@ proc handleResourcesRead*(composed: ComposedServer, params: JsonNode, ctx: McpRe
   var newParams = params.copy()
   newParams["uri"] = %actualUri
   
-  # Create a new request for the mounted server and route it
-  let newRequest = JsonRpcRequest(
-    jsonrpc: "2.0",
-    `method`: "resources/read",
-    id: some(JsonRpcId(kind: jridString, str: "resources_read")),  # Simple ID for internal routing
-    params: some(newParams)
-  )
-  let response = server.handleRequest(newRequest)
-  if response.result.isSome:
-    return response.result.get()
-  else:
-    raise newException(ValueError, "Resource read failed")
+  # Route directly to the server's resource read handler (bypassing JSON-RPC layer)
+  # This preserves the server's initialized state
+  return handleResourcesRead(server, newParams, ctx)
 
 proc handlePromptsList*(composed: ComposedServer): JsonNode =
   ## Handle prompts/list request by aggregating prompts from all mounted servers
-  var allPrompts: seq[McpPrompt] = @[]
+  var allPrompts: seq[JsonNode] = @[]
   
   for mountPoint in composed.mountPoints:
     let server = mountPoint.server
-    let prompts = server.getRegisteredPromptNames()
     
-    for promptName in prompts:
-      # Get the prompt from the server and add prefix if needed
-      let prompt = server.prompts[promptName]  # Access internal prompts table
-      var prefixedPrompt = prompt
-      prefixedPrompt.name = addPrefix(prompt.name, mountPoint.prefix)
-      allPrompts.add(prefixedPrompt)
+    # Get prompts list from the server using its internal request handler
+    let promptsRequest = JsonRpcRequest(
+      jsonrpc: "2.0",
+      `method`: "prompts/list",
+      id: some(JsonRpcId(kind: jridString, str: "prompts_list")),
+      params: none(JsonNode)
+    )
+    let response = server.handleRequest(promptsRequest)
+    
+    if response.result.isSome:
+      let promptsData = response.result.get()
+      if promptsData.hasKey("prompts"):
+        let prompts = promptsData["prompts"]
+        for promptJson in prompts.getElems():
+          var prefixedPrompt = promptJson.copy()
+          let originalName = promptJson["name"].getStr()
+          let prefixedName = addPrefix(originalName, mountPoint.prefix)
+          prefixedPrompt["name"] = %prefixedName
+          allPrompts.add(prefixedPrompt)
   
-  return createPromptsListResponseJson(allPrompts)
+  return %*{"prompts": allPrompts}
 
 proc handlePromptsGet*(composed: ComposedServer, params: JsonNode, ctx: McpRequestContext = nil): JsonNode =
   ## Handle prompts/get request by routing to the appropriate mounted server
@@ -304,18 +323,9 @@ proc handlePromptsGet*(composed: ComposedServer, params: JsonNode, ctx: McpReque
   var newParams = params.copy()
   newParams["name"] = %actualPromptName
   
-  # Create a new request for the mounted server and route it
-  let newRequest = JsonRpcRequest(
-    jsonrpc: "2.0",
-    `method`: "prompts/get",
-    id: some(JsonRpcId(kind: jridString, str: "prompts_get")),  # Simple ID for internal routing
-    params: some(newParams)
-  )
-  let response = server.handleRequest(newRequest)
-  if response.result.isSome:
-    return response.result.get()
-  else:
-    raise newException(ValueError, "Prompt get failed")
+  # Route directly to the server's prompt get handler (bypassing JSON-RPC layer)  
+  # This preserves the server's initialized state
+  return handlePromptsGet(server, newParams, ctx)
 
 proc handleRequest*(composed: ComposedServer, request: JsonRpcRequest): JsonRpcResponse =
   ## Main request handler for ComposedServer that routes requests appropriately
@@ -325,16 +335,24 @@ proc handleRequest*(composed: ComposedServer, request: JsonRpcRequest): JsonRpcR
     
     let responseData = case request.`method`
     of "initialize":
-      # Use the main server's initialize handler
+      # Initialize the main server first
       let initRequest = JsonRpcRequest(
         jsonrpc: "2.0",
         `method`: "initialize",
         id: some(JsonRpcId(kind: jridString, str: "initialize")),
         params: request.params
       )
-      let response = composed.mainServer.handleRequest(initRequest)
-      if response.result.isSome:
-        response.result.get()
+      let mainResponse = composed.mainServer.handleRequest(initRequest)
+      
+      # Then propagate initialization to all mounted servers
+      for mountPoint in composed.mountPoints:
+        let childResponse = mountPoint.server.handleRequest(initRequest)
+        if childResponse.error.isSome:
+          raise newException(ValueError, "Failed to initialize mounted server: " & mountPoint.path)
+      
+      # Return the main server's initialize response
+      if mainResponse.result.isSome:
+        mainResponse.result.get()
       else:
         raise newException(ValueError, "Initialize failed")
     of "tools/list":

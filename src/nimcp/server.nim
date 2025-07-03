@@ -321,7 +321,7 @@ proc handleToolsList(server: McpServer): JsonNode {.gcsafe.} =
       tools.add(tool)
   return createToolsListResponseJson(tools)
 
-proc handleToolsCall(server: McpServer, params: JsonNode, ctx: McpRequestContext = nil): JsonNode {.gcsafe.} =
+proc handleToolsCall*(server: McpServer, params: JsonNode, ctx: McpRequestContext = nil): JsonNode {.gcsafe.} =
   let toolName = requireStringField(params, "name")
   if toolName.len == 0:
     raise newException(ValueError, "Tool name cannot be empty")
@@ -359,7 +359,7 @@ proc handleResourcesList(server: McpServer): JsonNode {.gcsafe.} =
       resources.add(resource)
   return createResourcesListResponseJson(resources)
 
-proc handleResourcesRead(server: McpServer, params: JsonNode, ctx: McpRequestContext = nil): JsonNode {.gcsafe.} =
+proc handleResourcesRead*(server: McpServer, params: JsonNode, ctx: McpRequestContext = nil): JsonNode {.gcsafe.} =
   let uri = requireStringField(params, "uri")
   if uri.len == 0:
     raise newException(ValueError, "Resource URI cannot be empty")
@@ -448,7 +448,7 @@ proc handlePromptsList(server: McpServer): JsonNode {.gcsafe.} =
       prompts.add(prompt)
   return createPromptsListResponseJson(prompts)
 
-proc handlePromptsGet(server: McpServer, params: JsonNode, ctx: McpRequestContext = nil): JsonNode {.gcsafe.} =
+proc handlePromptsGet*(server: McpServer, params: JsonNode, ctx: McpRequestContext = nil): JsonNode {.gcsafe.} =
   let promptName = requireStringField(params, "name")
   if promptName.len == 0:
     raise newException(ValueError, "Prompt name cannot be empty")
@@ -548,7 +548,7 @@ proc handleRequest*(server: McpServer, request: JsonRpcRequest): JsonRpcResponse
     if processedRequest.`method` != "initialize" and not server.initialized:
       let error = newMcpStructuredError(McpServerNotInitialized, melError,
         "Server must be initialized before calling " & processedRequest.`method`, requestId = ctx.requestId)
-      result = JsonRpcResponse(jsonrpc: "2.0", id: id, error: some(error.toJsonRpcError()))
+      result = createStructuredErrorResponse(id, error)
       return
     
     # Check for cancellation
@@ -572,7 +572,7 @@ proc handleRequest*(server: McpServer, request: JsonRpcRequest): JsonRpcResponse
       else:
         let error = newMcpStructuredError(MethodNotFound, melError,
           "Method not found: " & processedRequest.`method`, requestId = ctx.requestId)
-        result = JsonRpcResponse(jsonrpc: "2.0", id: id, error: some(error.toJsonRpcError()))
+        result = createStructuredErrorResponse(id, error)
         return
 
     let response = createJsonRpcResponse(id, res)
@@ -580,19 +580,19 @@ proc handleRequest*(server: McpServer, request: JsonRpcRequest): JsonRpcResponse
     
   except ValueError as e:
     let error = newMcpStructuredError(InvalidParams, melError, e.msg, requestId = ctx.requestId)
-    return JsonRpcResponse(jsonrpc: "2.0", id: id, error: some(error.toJsonRpcError()))
+    return createStructuredErrorResponse(id, error)
   except JsonParsingError as e:
     let error = newMcpStructuredError(ParseError, melError, "JSON parsing error: " & e.msg, requestId = ctx.requestId)
-    return JsonRpcResponse(jsonrpc: "2.0", id: id, error: some(error.toJsonRpcError()))
+    return createStructuredErrorResponse(id, error)
   except RequestCancellation:
     let error = newMcpStructuredError(McpRequestCancelled, melWarning, "Request was cancelled", requestId = ctx.requestId)
-    return JsonRpcResponse(jsonrpc: "2.0", id: id, error: some(error.toJsonRpcError()))
+    return createStructuredErrorResponse(id, error)
   except RequestTimeout:
     let error = newMcpStructuredError(McpRequestCancelled, melWarning, "Request timed out", requestId = ctx.requestId)
-    return JsonRpcResponse(jsonrpc: "2.0", id: id, error: some(error.toJsonRpcError()))
+    return createStructuredErrorResponse(id, error)
   except Exception as e:
     let error = newMcpStructuredError(InternalError, melCritical, "Internal error: " & e.msg, requestId = ctx.requestId)
-    return JsonRpcResponse(jsonrpc: "2.0", id: id, error: some(error.toJsonRpcError()))
+    return createStructuredErrorResponse(id, error)
 
 
 
