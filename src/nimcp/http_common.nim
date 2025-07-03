@@ -1,7 +1,7 @@
 ## Common utilities for HTTP-based transports (Mummy, WebSocket, SSE)
 
-import mummy, mummy/routers, json, options, tables, strutils
-import server, types, protocol, auth, cors
+import mummy, mummy/routers, strformat
+import auth, cors
 
 type
   HttpServerBase* = ref object

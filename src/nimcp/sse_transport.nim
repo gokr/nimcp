@@ -52,7 +52,7 @@
 ## **Future Enhancement**: Support for simultaneous multiple transports would allow
 ## clients to choose their preferred transport (stdio, HTTP, WebSocket, SSE) from a single server instance.
 
-import mummy, mummy/routers, mummy/common, json, strutils, strformat, options, tables, locks, random
+import mummy, mummy/routers, mummy/common, json, strutils, strformat, options, tables, locks
 import server, types, protocol, auth, connection_pool, http_common
 
 type
@@ -64,11 +64,7 @@ type
     
   SseTransport* = ref object
     ## SSE transport implementation for MCP servers
-    router: Router
-    httpServer: Server
-    port*: int
-    host*: string
-    authConfig*: AuthConfig
+    base*: HttpServerBase
     connectionPool: ConnectionPool[MummySseConnection]
     sseEndpoint*: string
     messageEndpoint*: string
@@ -79,10 +75,7 @@ proc newSseTransport*(port: int = 8080, host: string = "127.0.0.1",
                       messageEndpoint: string = "/messages"): SseTransport =
   ## Create a new SSE transport instance
   var transport = SseTransport(
-    router: Router(),
-    port: port,
-    host: host,
-    authConfig: authConfig,
+    base: newHttpServerBase(port, host, authConfig, @[]),
     connectionPool: newConnectionPool[MummySseConnection](),
     sseEndpoint: sseEndpoint,
     messageEndpoint: messageEndpoint
@@ -93,7 +86,7 @@ proc newSseTransport*(port: int = 8080, host: string = "127.0.0.1",
 
 proc validateSseAuth(transport: SseTransport, request: Request): tuple[valid: bool, errorMsg: string] =
   ## Validate SSE authentication using shared auth module
-  let (valid, _, errorMsg) = validateRequest(transport.authConfig, request)
+  let (valid, _, errorMsg) = transport.base.validateAuthentication(request)
   if not valid:
     return (false, errorMsg)
   return (true, "")
@@ -125,12 +118,12 @@ proc setupRoutes(transport: SseTransport, server: McpServer) =
   ## Setup SSE and message handling routes
   
   # SSE endpoint - establishes server-to-client stream
-  transport.router.get(transport.sseEndpoint, proc (request: Request) =
+  transport.base.router.get(transport.sseEndpoint, proc (request: Request) =
     # Validate authentication
     let (valid, errorMsg) = validateSseAuth(transport, request)
     if not valid:
-      let errorResponse = if transport.authConfig.customErrorResponses.hasKey(401):
-                           transport.authConfig.customErrorResponses[401]
+      let errorResponse = if transport.base.authConfig.customErrorResponses.hasKey(401):
+                           transport.base.authConfig.customErrorResponses[401]
                          else:
                            "Unauthorized: " & errorMsg
       request.respond(401, body = errorResponse)
@@ -144,7 +137,7 @@ proc setupRoutes(transport: SseTransport, server: McpServer) =
       let connection = MummySseConnection(
         connection: sseConnection,
         id: generateConnectionId(),
-        authenticated: transport.authConfig.enabled
+        authenticated: transport.base.authConfig.enabled
       )
       transport.connectionPool.addConnection(connection.id, connection)
       
@@ -159,7 +152,7 @@ proc setupRoutes(transport: SseTransport, server: McpServer) =
   )
   
   # CORS preflight for SSE endpoint
-  transport.router.options(transport.sseEndpoint, proc (request: Request) =
+  transport.base.router.options(transport.sseEndpoint, proc (request: Request) =
     var headers: HttpHeaders
     headers["Access-Control-Allow-Origin"] = "*"
     headers["Access-Control-Allow-Headers"] = "Authorization, Content-Type"
@@ -168,7 +161,7 @@ proc setupRoutes(transport: SseTransport, server: McpServer) =
   )
   
   # Message endpoint - handles client-to-server POST requests
-  transport.router.post(transport.messageEndpoint, proc (request: Request) =
+  transport.base.router.post(transport.messageEndpoint, proc (request: Request) =
     # CORS headers
     var corsHeaders: HttpHeaders
     corsHeaders["Access-Control-Allow-Origin"] = "*"
@@ -216,7 +209,7 @@ proc setupRoutes(transport: SseTransport, server: McpServer) =
   )
   
   # CORS preflight for message endpoint
-  transport.router.options(transport.messageEndpoint, proc (request: Request) =
+  transport.base.router.options(transport.messageEndpoint, proc (request: Request) =
     var headers: HttpHeaders
     headers["Access-Control-Allow-Origin"] = "*"
     headers["Access-Control-Allow-Headers"] = "Authorization, Content-Type"
@@ -228,18 +221,18 @@ proc serve*(transport: SseTransport, server: McpServer) =
   ## Serve the SSE transport server
   setupRoutes(transport, server)
   
-  transport.httpServer = newServer(transport.router)
+  transport.base.httpServer = newServer(transport.base.router)
   
-  echo fmt"Starting MCP SSE server at http://{transport.host}:{transport.port}"
+  echo fmt"Starting MCP SSE server at http://{transport.base.host}:{transport.base.port}"
   echo fmt"SSE endpoint: {transport.sseEndpoint}"
   echo fmt"Message endpoint: {transport.messageEndpoint}"
-  if transport.authConfig.enabled:
+  if transport.base.authConfig.enabled:
     echo "Authentication: Enabled"
   else:
     echo "Authentication: Disabled"
   echo "Press Ctrl+C to stop the server"
   
-  transport.httpServer.serve(Port(transport.port), transport.host)
+  transport.base.httpServer.serve(Port(transport.base.port), transport.base.host)
 
 proc stop*(transport: SseTransport) =
   ## Stop the SSE transport server

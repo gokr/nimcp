@@ -41,7 +41,7 @@
 
 import mummy, mummy/routers, json, strutils, strformat, options, tables, locks
 import server, types, protocol
-import auth, connection_pool, cors
+import auth, connection_pool, cors, http_common
 type
   WebSocketConnection* = ref object
     ## Represents an active WebSocket connection
@@ -50,22 +50,15 @@ type
     authenticated*: bool
     
   WebSocketTransport* = ref object
-    ## WebSocket transport implementation for MCP servers
-    router: Router
-    httpServer: Server
-    port*: int
-    host*: string
-    authConfig*: AuthConfig
+    ## WebSocket transport implementation for MCP servers  
+    base*: HttpServerBase
     connectionPool: ConnectionPool[WebSocketConnection]
 
 # Reuse authentication types from mummy_transport
 proc newWebSocketTransport*(port: int = 8080, host: string = "127.0.0.1", authConfig: AuthConfig = newAuthConfig()): WebSocketTransport =
   ## Create a new WebSocket transport instance
   var transport = WebSocketTransport(
-    router: Router(),
-    port: port,
-    host: host,
-    authConfig: authConfig,
+    base: newHttpServerBase(port, host, authConfig, @[]),
     connectionPool: newConnectionPool[WebSocketConnection]()
   )
   return transport
@@ -139,7 +132,7 @@ proc upgradeHandler(transport: WebSocketTransport, request: Request) {.gcsafe.} 
   ## Handle WebSocket upgrade requests
   
   # Validate authentication using shared auth module
-  let (valid, errorCode, errorMsg) = validateRequest(transport.authConfig, request)
+  let (valid, errorCode, errorMsg) = transport.base.validateAuthentication(request)
   if not valid:
     var headers: HttpHeaders
     headers["Content-Type"] = "text/plain"
@@ -159,8 +152,8 @@ proc handleInfoRequest(transport: WebSocketTransport, server: McpServer, request
     "transport": "websocket",
     "capabilities": server.capabilities,
     "websocket": {
-      "endpoint": fmt"ws://{transport.host}:{transport.port}/",
-      "authentication": transport.authConfig.enabled
+      "endpoint": fmt"ws://{transport.base.host}:{transport.base.port}/",
+      "authentication": transport.base.authConfig.enabled
     }
   }
   
@@ -173,7 +166,7 @@ proc setupRoutes(transport: WebSocketTransport, server: McpServer) =
   ## Set up WebSocket and HTTP routes
   
   # WebSocket/HTTP endpoint
-  transport.router.get("/", proc(request: Request) {.gcsafe.} = 
+  transport.base.router.get("/", proc(request: Request) {.gcsafe.} = 
     if "Upgrade" in request.headers and request.headers["Upgrade"].toLowerAscii() == "websocket":
       transport.upgradeHandler(request)
     else:
@@ -181,7 +174,7 @@ proc setupRoutes(transport: WebSocketTransport, server: McpServer) =
   )
   
   # OPTIONS for CORS
-  transport.router.options("/", proc(request: Request) {.gcsafe.} =
+  transport.base.router.options("/", proc(request: Request) {.gcsafe.} =
     let headers = corsHeadersFor("GET, OPTIONS", "Content-Type, Accept, Origin, Authorization, Upgrade, Connection")
     request.respond(204, headers, "")
   )
@@ -198,8 +191,8 @@ proc serve*(transport: WebSocketTransport, server: McpServer) =
 
 proc shutdown*(transport: WebSocketTransport) =
   ## Shutdown the WebSocket server and close all connections
-  if transport.httpServer != nil:
-    transport.httpServer.close()
+  if transport.base.httpServer != nil:
+    transport.base.httpServer.close()
   
   # Close all active WebSocket connections
   for connection in transport.connectionPool.connections():

@@ -67,23 +67,14 @@ type
     connections*: Table[string, Request]  # Active streaming connections
 
 proc newMummyTransport*(port: int = 8080, host: string = "127.0.0.1", authConfig: AuthConfig = newAuthConfig(), allowedOrigins: seq[string] = @[]): MummyTransport =
-  var defaultOrigins = if allowedOrigins.len == 0: @["http://localhost", "https://localhost", "http://127.0.0.1", "https://127.0.0.1"] else: allowedOrigins
   var transport = MummyTransport(
-    router: Router(),
-    port: port,
-    host: host,
-    authConfig: authConfig,
-    allowedOrigins: defaultOrigins,
+    base: newHttpServerBase(port, host, authConfig, allowedOrigins),
     connections: initTable[string, Request]()
   )
   return transport
 proc validateOrigin(transport: MummyTransport, request: Request): bool =
   ## Validate Origin header to prevent DNS rebinding attacks
-  if "Origin" notin request.headers:
-    return true  # Allow requests without Origin header (e.g., from curl)
-  
-  let origin = request.headers["Origin"]
-  return origin in transport.allowedOrigins
+  return transport.base.validateOrigin(request)
 
 proc supportsStreaming(request: Request): bool =
   ## Check if client supports SSE streaming via Accept header
@@ -101,7 +92,7 @@ proc getSessionId(request: Request): string =
 
 proc validateAuthentication(transport: MummyTransport, request: Request): tuple[valid: bool, errorCode: int, errorMsg: string] =
   ## Validate authentication using shared auth module
-  validateRequest(transport.authConfig, request)
+  return transport.base.validateAuthentication(request)
 
 proc handleJsonRequest(transport: MummyTransport, server: McpServer, request: Request, jsonRpcRequest: JsonRpcRequest, sessionId: string) {.gcsafe.} =
   ## Handle regular JSON response mode
@@ -148,13 +139,9 @@ proc handleStreamingRequest(transport: MummyTransport, server: McpServer, reques
   
   # Send response as SSE event if not a notification
   if response.id.kind != jridString or response.id.str != "":
-    var responseJson = newJObject()
-    responseJson["jsonrpc"] = %response.jsonrpc
-    responseJson["id"] = %response.id
-    if response.result.isSome():
-      responseJson["result"] = response.result.get()
-    if response.error.isSome():
-      responseJson["error"] = %response.error.get()
+    # Use centralized JSON serialization from protocol.nim
+    let responseJsonStr = $response
+    let responseJson = parseJson(responseJsonStr)
     
     let eventData = formatSseEvent("message", responseJson, $now().toTime().toUnix())
     # Note: For proper SSE streaming, we need to send the event data
@@ -175,8 +162,8 @@ proc handleMcpRequest(transport: MummyTransport, server: McpServer, request: Req
     let authResult = validateAuthentication(transport, request)
     if not authResult.valid:
       headers["Content-Type"] = "text/plain"
-      let errorMsg = if authResult.errorCode in transport.authConfig.customErrorResponses:
-                      transport.authConfig.customErrorResponses[authResult.errorCode]
+      let errorMsg = if authResult.errorCode in transport.base.authConfig.customErrorResponses:
+                      transport.base.authConfig.customErrorResponses[authResult.errorCode]
                     else:
                       authResult.errorMsg
       request.respond(authResult.errorCode, headers, errorMsg)
@@ -246,17 +233,17 @@ proc handleMcpRequest(transport: MummyTransport, server: McpServer, request: Req
 
 proc setupRoutes(transport: MummyTransport, server: McpServer) =
   # Handle all MCP requests on the root path
-  transport.router.get("/", proc(request: Request) {.gcsafe.} = transport.handleMcpRequest(server, request))
-  transport.router.post("/", proc(request: Request) {.gcsafe.} = transport.handleMcpRequest(server, request))
-  transport.router.options("/", proc(request: Request) {.gcsafe.} = transport.handleMcpRequest(server, request))
+  transport.base.router.get("/", proc(request: Request) {.gcsafe.} = transport.handleMcpRequest(server, request))
+  transport.base.router.post("/", proc(request: Request) {.gcsafe.} = transport.handleMcpRequest(server, request))
+  transport.base.router.options("/", proc(request: Request) {.gcsafe.} = transport.handleMcpRequest(server, request))
 
 proc serve*(transport: MummyTransport, server: McpServer) =
   ## Serve the HTTP server and serve MCP requests
   transport.setupRoutes(server)
-  transport.httpServer = newServer(transport.router)
+  transport.base.httpServer = newServer(transport.base.router)
   
-  echo fmt"Starting MCP HTTP server at http://{transport.host}:{transport.port}"
+  echo fmt"Starting MCP HTTP server at http://{transport.base.host}:{transport.base.port}"
   echo "Press Ctrl+C to stop the server"
   
-  transport.httpServer.serve(Port(transport.port), transport.host)
+  transport.base.httpServer.serve(Port(transport.base.port), transport.base.host)
 
