@@ -32,27 +32,8 @@ type
     requestTimeout*: int  # milliseconds
     enableContextLogging*: bool
     logger*: Logger
-    transport*: Option[McpTransport]  # Type-safe transport storage
     customData*: Table[string, pointer]  # Custom data storage for other use cases
 
-  # Server composition types (moved from types.nim to avoid circular dependency)
-  MountPoint* = object
-    ## Represents a mount point for a server
-    path*: string
-    server*: McpServer  # Proper ref type instead of unsafe pointer
-    prefix*: Option[string]  # Optional prefix for tool/resource names
-
-  ComposedServer* = ref object
-    ## A server that can mount multiple other servers
-    mainServer*: McpServer  # Proper ref type instead of unsafe pointer
-    mountPoints*: seq[MountPoint]
-    pathMappings*: Table[string, MountPoint]
-
-  ServerNamespace* = object
-    ## Namespace configuration for mounted servers
-    toolPrefix*: Option[string]
-    resourcePrefix*: Option[string]
-    promptPrefix*: Option[string]
 
 proc newMcpServer*(name: string, version: string): McpServer =
   ## Create a new MCP server instance.
@@ -71,7 +52,6 @@ proc newMcpServer*(name: string, version: string): McpServer =
   result.enableContextLogging = false
   result.middleware = @[]
   result.resourceTemplates = newResourceTemplateRegistry()
-  result.transport = none(McpTransport)  # Initialize with no transport
   result.customData = initTable[string, pointer]()
   
   # Initialize logging with server-specific component name
@@ -135,67 +115,6 @@ proc shutdown*(server: McpServer) =
   cleanupExpiredContexts()
   server.logger.info("MCP server shutdown complete")
 
-# Transport helper methods
-proc getTransportKind*(server: McpServer): TransportKind =
-  ## Get the kind of currently active transport
-  if server.transport.isSome:
-    return server.transport.get().kind
-  else:
-    return tkNone
-
-proc hasTransport*(server: McpServer): bool =
-  ## Check if server has an active transport
-  return server.transport.isSome
-
-proc clearTransport*(server: McpServer) =
-  ## Clear the active transport
-  server.transport = none(McpTransport)
-
-# Transport configuration methods
-proc setSseTransport*(server: McpServer, port: int = 8080, host: string = "127.0.0.1", authConfig: pointer = nil, sseEndpoint: string = "/sse", messageEndpoint: string = "/messages") =
-  ## Set SSE transport with configuration
-  let sseData = SseTransportData(
-    port: port,
-    host: host,
-    authConfig: authConfig,
-    connectionPool: nil,
-    sseEndpoint: sseEndpoint,
-    messageEndpoint: messageEndpoint
-  )
-  server.transport = some(McpTransport(
-    kind: tkSSE,
-    capabilities: {tcBroadcast, tcEvents, tcUnicast},
-    sseData: sseData
-  ))
-
-proc setWebSocketTransport*(server: McpServer, port: int = 8080, host: string = "127.0.0.1", authConfig: pointer = nil) =
-  ## Set WebSocket transport with configuration
-  let wsData = WebSocketTransportData(
-    port: port,
-    host: host,
-    authConfig: authConfig,
-    connectionPool: nil
-  )
-  server.transport = some(McpTransport(
-    kind: tkWebSocket,
-    capabilities: {tcBroadcast, tcEvents, tcUnicast, tcBidirectional},
-    wsData: wsData
-  ))
-
-proc setHttpTransport*(server: McpServer, port: int = 8080, host: string = "127.0.0.1", authConfig: pointer = nil, allowedOrigins: seq[string] = @[]) =
-  ## Set HTTP transport with configuration
-  let httpData = HttpTransportData(
-    port: port,
-    host: host,
-    authConfig: authConfig,
-    allowedOrigins: allowedOrigins,
-    connections: nil
-  )
-  server.transport = some(McpTransport(
-    kind: tkHttp,
-    capabilities: {tcBroadcast, tcEvents},
-    httpData: httpData
-  ))
 
 # Helper functions to reduce registration code duplication
 proc validateRegistration(itemType: string, itemKey: string) =
@@ -409,44 +328,30 @@ proc handleToolsCall(server: McpServer, params: JsonNode, ctx: McpRequestContext
 
   let args = if params.hasKey("arguments"): params["arguments"] else: newJObject()
   
-  # Check for handlers in order of preference: context-aware, regular
-  var contextHandler: McpToolHandlerWithContext
-  var regularHandler: McpToolHandler
+template dispatch*[T, U, V, W](server: McpServer, lock: Lock, contextAwareHandlers: Table[string, T], regularHandlers: Table[string, U], key: string, ctx: McpRequestContext, args: V, handlerName: string, extraArgs: W): auto =
+  var contextHandler: T
+  var regularHandler: U
   var hasContextHandler = false
   var hasRegularHandler = false
-  
-  withLock toolsLock:
-    if toolName in server.contextAwareToolHandlers:
-      contextHandler = server.contextAwareToolHandlers[toolName]
+
+  withLock lock:
+    if key in contextAwareHandlers:
+      contextHandler = contextAwareHandlers[key]
       hasContextHandler = true
-    elif toolName in server.toolHandlers:
-      regularHandler = server.toolHandlers[toolName]
+    elif key in regularHandlers:
+      regularHandler = regularHandlers[key]
       hasRegularHandler = true
     else:
-      raise newException(ValueError, "Tool not found: " & toolName)
-  
-  try:
-    let requestCtx = if ctx != nil: ctx else: newMcpRequestContextWithServer(server)
-    
-    if server.enableContextLogging:
-      requestCtx.logMessage("info", "Executing tool: " & toolName)
-    
-    let res = if hasContextHandler:
-      contextHandler(requestCtx, args)
-    else:
-      regularHandler(args)
-    
-    # Use consolidated JSON utilities for consistent serialization
-    return %*{
-      "content": contentsToJsonArray(res.content)
-    }
-  except RequestCancellation:
-    raise newException(ValueError, "Tool execution cancelled for '" & toolName & "'")
-  except RequestTimeout:
-    raise newException(ValueError, "Tool execution timed out for '" & toolName & "'")
-  except Exception as e:
-    raise newException(ValueError, "Tool execution failed for '" & toolName & "': " & e.msg)
+      raise newException(ValueError, handlerName & " not found: " & key)
 
+  let requestCtx = if ctx != nil: ctx else: newMcpRequestContextWithServer(server)
+  if server.enableContextLogging:
+    requestCtx.logMessage("info", "Executing " & handlerName & ": " & key)
+
+  if hasContextHandler:
+    contextHandler(requestCtx, extraArgs, args)
+  else:
+    regularHandler(extraArgs, args)
 proc handleResourcesList(server: McpServer): JsonNode {.gcsafe.} =
   var resources: seq[McpResource] = @[]
   withLock resourcesLock:
@@ -552,33 +457,9 @@ proc handlePromptsGet(server: McpServer, params: JsonNode, ctx: McpRequestContex
   if params.hasKey("arguments"):
     for key, value in params["arguments"]:
       args[key] = value
-  
-  var contextHandler: McpPromptHandlerWithContext
-  var regularHandler: McpPromptHandler
-  var hasContextHandler = false
-  var hasRegularHandler = false
-  
-  withLock promptsLock:
-    if promptName in server.contextAwarePromptHandlers:
-      contextHandler = server.contextAwarePromptHandlers[promptName]
-      hasContextHandler = true
-    elif promptName in server.promptHandlers:
-      regularHandler = server.promptHandlers[promptName]
-      hasRegularHandler = true
-    else:
-      raise newException(ValueError, "Prompt not found: " & promptName)
-  
+
   try:
-    let requestCtx = if ctx != nil: ctx else: newMcpRequestContextWithServer(server)
-    
-    if server.enableContextLogging:
-      requestCtx.logMessage("info", "Executing prompt: " & promptName)
-    
-    let res = if hasContextHandler:
-      contextHandler(requestCtx, promptName, args)
-    else:
-      regularHandler(promptName, args)
-    
+    let res = dispatch(server, promptsLock, server.contextAwarePromptHandlers, server.promptHandlers, promptName, ctx, args, "Prompt")
     # Create response manually to avoid GC safety issues
     var responseJson = newJObject()
     if res.description.isSome:
@@ -717,138 +598,3 @@ proc handleRequest*(server: McpServer, request: JsonRpcRequest): JsonRpcResponse
 
 
 
-# Server Composition and Mounting functionality
-proc newMountPoint*(path: string, server: McpServer, prefix: Option[string] = none(string)): MountPoint =
-  ## Create a new mount point
-  MountPoint(
-    path: path,
-    server: server,  # Direct ref assignment instead of unsafe pointer cast
-    prefix: prefix
-  )
-
-proc newComposedServer*(name: string, version: string): ComposedServer =
-  ## Create a new composed server that can mount other servers
-  let mainServer = newMcpServer(name, version)
-  ComposedServer(
-    mainServer: mainServer,  # Direct ref assignment instead of unsafe pointer cast
-    mountPoints: @[],
-    pathMappings: initTable[string, MountPoint]()
-  )
-
-
-proc mountServer*(composed: ComposedServer, mountPoint: MountPoint) =
-  ## Mount a server at the specified mount point
-  if mountPoint.path in composed.pathMappings:
-    raise newException(ValueError, "Mount point already exists: " & mountPoint.path)
-  
-  composed.mountPoints.add(mountPoint)
-  composed.pathMappings[mountPoint.path] = mountPoint
-
-proc mountServerAt*(composed: ComposedServer, path: string, server: McpServer, prefix: Option[string] = none(string)) =
-  ## Mount a server at the specified path with optional prefix
-  let mountPoint = newMountPoint(path, server, prefix)
-  composed.mountServer(mountPoint)
-
-proc unmountServer*(composed: ComposedServer, path: string): bool =
-  ## Unmount a server from the specified path, returns true if unmounted
-  if path notin composed.pathMappings:
-    result = false
-    return
-
-  composed.pathMappings.del(path)
-
-  # Remove from mountPoints sequence
-  for i in countdown(composed.mountPoints.len - 1, 0):
-    if composed.mountPoints[i].path == path:
-      composed.mountPoints.del(i)
-      break
-
-  return true
-
-proc findMountPointForTool*(composed: ComposedServer, toolName: string): Option[MountPoint] =
-  ## Find the mount point that should handle a given tool name
-  for mountPoint in composed.mountPoints:
-    if mountPoint.prefix.isSome:
-      let prefix = mountPoint.prefix.get()
-      if toolName.startsWith(prefix):
-        result = some(mountPoint)
-        return
-    else:
-      # Check if the mounted server has this tool
-      let server = mountPoint.server
-      let tools = server.getRegisteredToolNames()
-      if toolName in tools:
-        result = some(mountPoint)
-        return
-
-  return none(MountPoint)
-
-proc findMountPointForResource*(composed: ComposedServer, uri: string): Option[MountPoint] =
-  ## Find the mount point that should handle a given resource URI
-  for mountPoint in composed.mountPoints:
-    if mountPoint.prefix.isSome:
-      let prefix = mountPoint.prefix.get()
-      if uri.startsWith(mountPoint.path) or uri.startsWith(prefix):
-        result = some(mountPoint)
-        return
-    else:
-      # Check if the mounted server has this resource
-      let server = mountPoint.server
-      let resources = server.getRegisteredResourceUris()
-      if uri in resources:
-        result = some(mountPoint)
-        return
-
-  return none(MountPoint)
-
-proc findMountPointForPrompt*(composed: ComposedServer, promptName: string): Option[MountPoint] =
-  ## Find the mount point that should handle a given prompt name
-  for mountPoint in composed.mountPoints:
-    if mountPoint.prefix.isSome:
-      let prefix = mountPoint.prefix.get()
-      if promptName.startsWith(prefix):
-        return some(mountPoint)
-    else:
-      # Check if the mounted server has this prompt
-      let server = mountPoint.server
-      let prompts = server.getRegisteredPromptNames()
-      if promptName in prompts:
-        return some(mountPoint)
-  
-  return none(MountPoint)
-
-proc stripPrefix*(name: string, prefix: Option[string]): string =
-  ## Strip prefix from a name if present
-  if prefix.isSome:
-    let prefixStr = prefix.get()
-    if name.startsWith(prefixStr):
-      return name[prefixStr.len..^1]
-  return name
-
-proc addPrefix*(name: string, prefix: Option[string]): string =
-  ## Add prefix to a name if specified
-  if prefix.isSome:
-    return prefix.get() & name
-  return name
-
-proc listMountPoints*(composed: ComposedServer): seq[MountPoint] =
-  ## List all mount points
-  return composed.mountPoints
-
-proc getMountedServerInfo*(composed: ComposedServer): Table[string, JsonNode] =
-  ## Get information about all mounted servers
-  result = initTable[string, JsonNode]()
-  
-  for mountPoint in composed.mountPoints:
-    let server = mountPoint.server
-    var info = newJObject()
-    info["path"] = %mountPoint.path
-    info["serverName"] = %server.serverInfo.name
-    info["serverVersion"] = %server.serverInfo.version
-    if mountPoint.prefix.isSome:
-      info["prefix"] = %mountPoint.prefix.get()
-    info["toolCount"] = %server.getRegisteredToolNames().len
-    info["resourceCount"] = %server.getRegisteredResourceUris().len
-    info["promptCount"] = %server.getRegisteredPromptNames().len
-    
-    result[mountPoint.path] = info

@@ -395,27 +395,7 @@ const
   McpValidationError* = -32008       ## Parameter validation failed
   McpMiddlewareError* = -32009       ## Middleware processing error
 
-# Transport configuration types
-type
-  McpTransportKind* = enum
-    mtStdio,    ## Standard input/output transport
-    mtHttp,     ## HTTP transport
-    mtWebSocket ## WebSocket transport
-  
-  McpTransportConfig* = object
-    case kind*: McpTransportKind
-    of mtStdio:
-      discard
-    of mtHttp:
-      port*: int
-      host*: string
-      requireHttps*: bool
-      tokenValidator*: proc(token: string): bool {.gcsafe.}
-    of mtWebSocket:
-      wsPort*: int
-      wsHost*: string
-      wsRequireHttps*: bool
-      wsTokenValidator*: proc(token: string): bool {.gcsafe.}
+
 
 # Enhanced content types for advanced schema support
 type
@@ -693,54 +673,7 @@ proc addProperty*(schema: JsonSchemaRef, name: string, propSchema: JsonSchemaRef
     if required:
       schema.required.add(name)
 
-# Convenience constructor functions for transport configs
-proc StdioTransport*(): McpTransportConfig =
-  ## Create a stdio transport configuration
-  McpTransportConfig(kind: mtStdio)
 
-proc HttpTransport*(port: int = 8080, host: string = "127.0.0.1"): McpTransportConfig =
-  ## Create an HTTP transport configuration
-  McpTransportConfig(
-    kind: mtHttp,
-    port: port,
-    host: host,
-    requireHttps: false,
-    tokenValidator: nil
-  )
-
-proc HttpTransportAuth*(port: int = 8080, host: string = "127.0.0.1", 
-                       requireHttps: bool = false, 
-                       tokenValidator: proc(token: string): bool {.gcsafe.}): McpTransportConfig =
-  ## Create an HTTP transport configuration with authentication
-  McpTransportConfig(
-    kind: mtHttp,
-    port: port,
-    host: host,
-    requireHttps: requireHttps,
-    tokenValidator: tokenValidator
-  )
-
-proc WebSocketTransport*(port: int = 8080, host: string = "127.0.0.1"): McpTransportConfig =
-  ## Create a WebSocket transport configuration
-  McpTransportConfig(
-    kind: mtWebSocket,
-    wsPort: port,
-    wsHost: host,
-    wsRequireHttps: false,
-    wsTokenValidator: nil
-  )
-
-proc WebSocketTransportAuth*(port: int = 8080, host: string = "127.0.0.1", 
-                            requireHttps: bool = false, 
-                            tokenValidator: proc(token: string): bool {.gcsafe.}): McpTransportConfig =
-  ## Create a WebSocket transport configuration with authentication
-  McpTransportConfig(
-    kind: mtWebSocket,
-    wsPort: port,
-    wsHost: host,
-    wsRequireHttps: requireHttps,
-    wsTokenValidator: tokenValidator
-  )
 
 # Context utility functions are now in context.nim module to avoid duplication
 

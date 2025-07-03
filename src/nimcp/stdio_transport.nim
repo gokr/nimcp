@@ -37,21 +37,7 @@ proc processRequestTask(transport: ptr StdioTransport, server: ptr McpServer, re
       server[].handleNotification(request)
     else:
       let response = server[].handleRequest(request)
-
-      # Create JSON response manually for thread safety
-      var responseJson = newJObject()
-      responseJson["jsonrpc"] = %response.jsonrpc
-      responseJson["id"] = %response.id
-      if response.result.isSome:
-        responseJson["result"] = response.result.get
-      if response.error.isSome:
-        let errorObj = newJObject()
-        errorObj["code"] = %response.error.get.code
-        errorObj["message"] = %response.error.get.message
-        if response.error.get.data.isSome:
-          errorObj["data"] = response.error.get.data.get
-        responseJson["error"] = errorObj
-      transport[].safeEcho($responseJson)
+      transport[].safeEcho($response)
   except Exception as e:
     let errorResponse = createJsonRpcError(requestId, ParseError, "Parse error: " & e.msg)
     transport[].safeEcho($(%errorResponse))
