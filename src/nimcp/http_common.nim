@@ -36,7 +36,7 @@ proc handleCors*(request: Request) =
 
 proc startServer*(base: HttpServerBase, wsHandler: WebSocketHandler = nil) =
   base.httpServer = newServer(base.router, wsHandler)
-  echo &"Starting MCP server at http://{base.host}:{base.port}"
+  echo fmt"Starting MCP server at http://{base.host}:{base.port}"
   if base.authConfig.enabled:
     echo "Authentication: Bearer token required"
   echo "Press Ctrl+C to stop the server"
