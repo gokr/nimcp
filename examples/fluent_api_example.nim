@@ -1,4 +1,4 @@
-## Fluent API Example - Demonstrating UFCS for more readable server configuration
+## Fluent API Example - Demonstrating method chaining for more readable server configuration
 
 import ../src/nimcp
 import json, times, options, tables

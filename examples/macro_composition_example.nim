@@ -4,6 +4,7 @@
 import ../src/nimcp/mcpmacros
 import ../src/nimcp/server
 import ../src/nimcp/stdio_transport
+from ../src/nimcp/composed_server import newComposedServer, mountServerAt, ComposedServer, serve
 import json, math, strformat, os, strutils, options, tables
 
 # Calculator service using the macro system
@@ -97,12 +98,12 @@ when isMainModule:
   echo ""
   
   # Create a composed server that mounts all the macro-created servers
-  let composedServer = newComposedServer("api-gateway", "1.0.0")
+  let apiGateway = newComposedServer("api-gateway", "1.0.0")
   
   # Mount each service with different prefixes
-  composedServer.mountServerAt("/calc", calculatorServer, some("calc_"))
-  composedServer.mountServerAt("/files", fileServer, some("file_"))
-  composedServer.mountServerAt("/string", stringServer, some("str_"))
+  apiGateway.mountServerAt("/calc", calculatorServer, some("calc_"))
+  apiGateway.mountServerAt("/files", fileServer, some("file_"))
+  apiGateway.mountServerAt("/string", stringServer, some("str_"))
   
   echo "✅ Created composed server with mounted services:"
   echo "   📊 Calculator service at /calc with prefix 'calc_'"
@@ -112,7 +113,7 @@ when isMainModule:
   
   # Show server information
   echo "📋 Available tools in composed server:"
-  let mountInfo = composedServer.getMountedServerInfo()
+  let mountInfo = apiGateway.getMountedServerInfo()
   for path, info in mountInfo:
     let toolCount = info["toolCount"].getInt()
     let serverName = info["serverName"].getStr()
@@ -136,6 +137,6 @@ when isMainModule:
   echo "   Tools are automatically prefixed based on their service"
   echo ""
   
-  # Run the composed server using the main server
+  # Run the composed server using the new ComposedServer functionality
   let transport = newStdioTransport()
-  transport.serve(composedServer.mainServer)
+  transport.serve(composedServer)
