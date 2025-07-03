@@ -61,17 +61,17 @@ suite "HTTP Authentication Tests":
     
     # Note: These tests verify the configuration is properly set up
     # Actual HTTP request testing would require a running server and HTTP client
-    check transport.authConfig.enabled
-    check transport.authConfig.validator != nil
-    check not transport.authConfig.requireHttps
+    check transport.base.authConfig.enabled
+    check transport.base.authConfig.validator != nil
+    check not transport.base.authConfig.requireHttps
     
   test "Backward compatibility - no authentication by default":
     # Create transport without explicit auth config (should use default)
     let transport = newMummyTransport(8080, "127.0.0.1")
     
     # Default should be disabled
-    check not transport.authConfig.enabled
-    check transport.authConfig.validator == nil
+    check not transport.base.authConfig.enabled
+    check transport.base.authConfig.validator == nil
     
     # Using the convenience function should also default to no auth
     # Note: This would normally start a server, so we just test the config creation

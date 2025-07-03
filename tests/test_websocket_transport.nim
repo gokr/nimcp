@@ -10,9 +10,9 @@ suite "WebSocket Transport Tests":
     let transport = newWebSocketTransport(8080, "127.0.0.1")
     
     check transport != nil
-    check transport.port == 8080
-    check transport.host == "127.0.0.1"
-    check transport.authConfig.enabled == false
+    check transport.base.port == 8080
+    check transport.base.host == "127.0.0.1"
+    check transport.base.authConfig.enabled == false
     
     transport.shutdown()
   
@@ -26,28 +26,28 @@ suite "WebSocket Transport Tests":
     let transport = newWebSocketTransport(8081, "127.0.0.1", authConfig)
     
     check transport != nil
-    check transport.authConfig.enabled == true
-    check transport.authConfig.validator != nil
-    check transport.authConfig.validator("valid-token") == true
-    check transport.authConfig.validator("invalid-token") == false
+    check transport.base.authConfig.enabled == true
+    check transport.base.authConfig.validator != nil
+    check transport.base.authConfig.validator("valid-token") == true
+    check transport.base.authConfig.validator("invalid-token") == false
     
     transport.shutdown()
   
   test "WebSocket transport configuration types":
     let server = newMcpServer("config-test", "1.0.0")
     let transport = newWebSocketTransport(8080, "127.0.0.1")
-    check transport.port == 8080
-    check transport.host == "127.0.0.1"
-    check transport.authConfig.enabled == false
+    check transport.base.port == 8080
+    check transport.base.host == "127.0.0.1"
+    check transport.base.authConfig.enabled == false
     
     proc testAuth(token: string): bool {.gcsafe.} = token == "test"
     let authConfig = auth.newAuthConfig(testAuth, true)
     let authTransport = newWebSocketTransport(8081, "localhost", authConfig)
-    check authTransport.port == 8081
-    check authTransport.host == "localhost"
-    check authTransport.authConfig.enabled == true
-    check authTransport.authConfig.requireHttps == true
-    check authTransport.authConfig.validator != nil
+    check authTransport.base.port == 8081
+    check authTransport.base.host == "localhost"
+    check authTransport.base.authConfig.enabled == true
+    check authTransport.base.authConfig.requireHttps == true
+    check authTransport.base.authConfig.validator != nil
     
     transport.shutdown()
     authTransport.shutdown()

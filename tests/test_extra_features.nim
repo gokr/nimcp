@@ -2,6 +2,7 @@
 
 import unittest, json, tables, options, times
 import ../src/nimcp
+import ../src/nimcp/composed_server
 
 suite "Extra Features Tests":
   

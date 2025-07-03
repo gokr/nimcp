@@ -14,11 +14,11 @@ suite "SSE Transport Tests":
     
     # Test default configuration
     let defaultTransport = newSseTransport()
-    check defaultTransport.port == 8080
-    check defaultTransport.host == "127.0.0.1"
+    check defaultTransport.base.port == 8080
+    check defaultTransport.base.host == "127.0.0.1"
     check defaultTransport.sseEndpoint == "/sse"
     check defaultTransport.messageEndpoint == "/messages"
-    check not defaultTransport.authConfig.enabled
+    check not defaultTransport.base.authConfig.enabled
     
     # Test custom configuration
     proc testValidator(token: string): bool =
@@ -32,11 +32,11 @@ suite "SSE Transport Tests":
       sseEndpoint = "/events",
       messageEndpoint = "/api/messages"
     )
-    check customTransport.port == 9090
-    check customTransport.host == "0.0.0.0" 
+    check customTransport.base.port == 9090
+    check customTransport.base.host == "0.0.0.0" 
     check customTransport.sseEndpoint == "/events"
     check customTransport.messageEndpoint == "/api/messages"
-    check customTransport.authConfig.enabled
+    check customTransport.base.authConfig.enabled
     
   test "SSE connection management":
     let server = newMcpServer("sse-connection-test", "1.0.0")
@@ -62,8 +62,8 @@ suite "SSE Transport Tests":
     
     # Authentication is tested through the actual server endpoints
     # This would require complex HTTP client testing
-    check transport.authConfig.enabled
-    check transport.authConfig.validator != nil
+    check transport.base.authConfig.enabled
+    check transport.base.authConfig.validator != nil
     
   test "CORS functionality":
     let server = newMcpServer("sse-cors-test", "1.0.0") 
