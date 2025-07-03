@@ -64,12 +64,7 @@ import auth, cors  # Import shared modules
 
 type
   MummyTransport* = ref object
-    router: Router
-    httpServer: Server
-    port: int
-    host: string
-    authConfig*: AuthConfig
-    allowedOrigins*: seq[string]  # For DNS rebinding protection
+    base*: HttpServerBase
     connections*: Table[string, Request]  # Active streaming connections
 
 proc newMummyTransport*(port: int = 8080, host: string = "127.0.0.1", authConfig: AuthConfig = newAuthConfig(), allowedOrigins: seq[string] = @[]): MummyTransport =
@@ -122,16 +117,7 @@ proc handleJsonRequest(transport: MummyTransport, server: McpServer, request: Re
   
   # Only send a response if it's not empty (i.e., not a notification)
   if response.id.kind != jridString or response.id.str != "":
-    # Custom JSON serialization to exclude null fields (same as stdio transport)
-    var responseJson = newJObject()
-    responseJson["jsonrpc"] = %response.jsonrpc
-    responseJson["id"] = %response.id
-    if response.result.isSome():
-      responseJson["result"] = response.result.get()
-    if response.error.isSome():
-      responseJson["error"] = %response.error.get()
-    
-    request.respond(200, headers, $responseJson)
+    request.respond(200, headers, $response)
   else:
     # For notifications, just return 204 No Content
     request.respond(204, headers, "")

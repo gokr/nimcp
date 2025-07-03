@@ -45,3 +45,7 @@ iterator connections*[T](pool: ConnectionPool[T]): T =
 proc connectionCount*[T](pool: ConnectionPool[T]): int =
   withLock pool.lock:
     return pool.connections.len
+
+proc generateConnectionId*(): string =
+  ## Generate a unique connection ID
+  $rand(int.high)

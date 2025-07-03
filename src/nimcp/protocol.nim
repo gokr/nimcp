@@ -183,6 +183,17 @@ proc createResourcesListResponseJson*(resources: seq[McpResource]): JsonNode =
 proc createPromptsListResponseJson*(prompts: seq[McpPrompt]): JsonNode =
   %*{"prompts": prompts}
 
+proc `$`*(response: JsonRpcResponse): string =
+  ## Custom string representation for JsonRpcResponse to ensure clean JSON output.
+  var responseJson = newJObject()
+  responseJson["jsonrpc"] = %response.jsonrpc
+  responseJson["id"] = %response.id
+  if response.result.isSome():
+    responseJson["result"] = response.result.get()
+  if response.error.isSome():
+    responseJson["error"] = %response.error.get()
+  $responseJson
+
 # Convert McpResponse to JsonNode for serialization
 proc toJsonNode*(response: McpResponse): JsonNode =
   case response.kind:

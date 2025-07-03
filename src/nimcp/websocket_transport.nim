@@ -70,11 +70,7 @@ proc newWebSocketTransport*(port: int = 8080, host: string = "127.0.0.1", authCo
   )
   return transport
 
-import random
 
-proc generateConnectionId(): string =
-  ## Generate a unique connection ID
-  return $rand(int.high)
 
 
 proc handleJsonRpcMessage(transport: WebSocketTransport, server: McpServer, websocket: WebSocket, message: string) {.gcsafe.} =
@@ -97,16 +93,7 @@ proc handleJsonRpcMessage(transport: WebSocketTransport, server: McpServer, webs
     let response = server.handleRequest(jsonRpcRequest)
     
     # Send response back through WebSocket
-    var responseJson = newJObject()
-    responseJson["jsonrpc"] = %response.jsonrpc
-    responseJson["id"] = %response.id
-    
-    if response.result.isSome():
-      responseJson["result"] = response.result.get()
-    if response.error.isSome():
-      responseJson["error"] = %response.error.get()
-    
-    websocket.send($responseJson)
+    websocket.send($response)
     
   except JsonParsingError as e:
     let errorResponse = createParseError(details = e.msg)
@@ -207,14 +194,7 @@ proc serve*(transport: WebSocketTransport, server: McpServer) =
   let wsHandler = proc(websocket: WebSocket, event: WebSocketEvent, message: Message) {.gcsafe.} =
     transport.websocketEventHandler(server, websocket, event, message)
   
-  transport.httpServer = newServer(transport.router, wsHandler)
-  
-  echo fmt"Starting MCP WebSocket server at ws://{transport.host}:{transport.port}/"
-  if transport.authConfig.enabled:
-    echo "Authentication: Bearer token required"
-  echo "Press Ctrl+C to stop the server"
-  
-  transport.httpServer.serve(Port(transport.port), transport.host)
+  transport.base.startServer(wsHandler)
 
 proc shutdown*(transport: WebSocketTransport) =
   ## Shutdown the WebSocket server and close all connections

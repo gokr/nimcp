@@ -53,7 +53,7 @@
 ## clients to choose their preferred transport (stdio, HTTP, WebSocket, SSE) from a single server instance.
 
 import mummy, mummy/routers, mummy/common, json, strutils, strformat, options, tables, locks, random
-import server, types, protocol, auth, connection_pool
+import server, types, protocol, auth, connection_pool, http_common
 
 type
   MummySseConnection* = ref object
@@ -89,9 +89,7 @@ proc newSseTransport*(port: int = 8080, host: string = "127.0.0.1",
   )
   return transport
 
-proc generateConnectionId(): string =
-  ## Generate a unique connection ID
-  return $rand(int.high)
+
 
 proc validateSseAuth(transport: SseTransport, request: Request): tuple[valid: bool, errorMsg: string] =
   ## Validate SSE authentication using shared auth module
@@ -200,18 +198,7 @@ proc setupRoutes(transport: SseTransport, server: McpServer) =
       
       # Send response back via SSE to all connections
       # Per MCP specification, tool responses should only be sent via SSE events
-      
-      # Create JSON response (same format as mummy transport)
-      var responseJson = newJObject()
-      responseJson["jsonrpc"] = %response.jsonrpc
-      responseJson["id"] = %response.id
-      if response.result.isSome():
-        responseJson["result"] = response.result.get()
-      if response.error.isSome():
-        responseJson["error"] = %response.error.get()
-      
-      # Broadcast response via SSE to all connected clients
-      broadcastSseMessage(transport, responseJson)
+      broadcastSseMessage(transport, parseJson($response))
       
       # Return HTTP 204 No Content (no response body per MCP specification)
       request.respond(204, headers = corsHeaders)
@@ -256,17 +243,15 @@ proc serve*(transport: SseTransport, server: McpServer) =
 
 proc stop*(transport: SseTransport) =
   ## Stop the SSE transport server
-  if transport.httpServer != nil:
-    # Close all SSE connections
-    for connection in transport.connectionPool.connections():
-      try:
-        sendEvent(connection, "close", "Server shutting down")
-      except:
-        discard
-    transport.connectionPool = newConnectionPool[MummySseConnection]()
-    
-    transport.httpServer.close()
-    echo "SSE transport server stopped"
+  transport.base.stopServer()
+  # Close all SSE connections
+  for connection in transport.connectionPool.connections():
+    try:
+      sendEvent(connection, "close", "Server shutting down")
+    except:
+      discard
+  transport.connectionPool = newConnectionPool[MummySseConnection]()
+  echo "SSE transport server stopped"
 
 proc getActiveConnectionCount*(transport: SseTransport): int =
   ## Get the number of active SSE connections
