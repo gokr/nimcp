@@ -8,7 +8,7 @@
 ## It is used by transports that handle multiple client connections, such as
 ## WebSocket or SSE, to keep track of active connections.
 
-import tables, locks, options
+import tables, locks, options, random
 
 type
   ConnectionPool*[T] = ref object

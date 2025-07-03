@@ -1,7 +1,7 @@
 ## MCP protocol message handling and JSON-RPC 2.0 implementation
 
-import json, options, tables
-import types
+import json, options
+import types, context
 
 # JSON-RPC 2.0 message creation helpers
 proc createJsonRpcResponse*(id: JsonRpcId, resultData: JsonNode): JsonRpcResponse =
@@ -50,6 +50,14 @@ proc createInternalError*(id: JsonRpcId, details: string = ""): JsonRpcResponse 
   ## Create standardized internal error response
   let message = if details.len > 0: "Internal error: " & details else: "Internal error"
   createJsonRpcError(id, InternalError, message)
+
+proc createStructuredErrorResponse*(id: JsonRpcId, error: McpStructuredError): JsonRpcResponse =
+  ## Create JSON-RPC response from structured error using centralized conversion
+  JsonRpcResponse(
+    jsonrpc: "2.0",
+    id: id,
+    error: some(error.toJsonRpcError())
+  )
 
 proc createJsonRpcNotification*(methodName: string): JsonRpcNotification =
   JsonRpcNotification(

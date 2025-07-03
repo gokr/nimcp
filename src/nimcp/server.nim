@@ -321,13 +321,6 @@ proc handleToolsList(server: McpServer): JsonNode {.gcsafe.} =
       tools.add(tool)
   return createToolsListResponseJson(tools)
 
-proc handleToolsCall*(server: McpServer, params: JsonNode, ctx: McpRequestContext = nil): JsonNode {.gcsafe.} =
-  let toolName = requireStringField(params, "name")
-  if toolName.len == 0:
-    raise newException(ValueError, "Tool name cannot be empty")
-
-  let args = if params.hasKey("arguments"): params["arguments"] else: newJObject()
-  
 template dispatch*[T, U, V, W](server: McpServer, lock: Lock, contextAwareHandlers: Table[string, T], regularHandlers: Table[string, U], key: string, ctx: McpRequestContext, args: V, handlerName: string, extraArgs: W): auto =
   var contextHandler: T
   var regularHandler: U
@@ -352,6 +345,60 @@ template dispatch*[T, U, V, W](server: McpServer, lock: Lock, contextAwareHandle
     contextHandler(requestCtx, extraArgs, args)
   else:
     regularHandler(extraArgs, args)
+
+proc handleToolsCall*(server: McpServer, params: JsonNode, ctx: McpRequestContext = nil): JsonNode {.gcsafe.} =
+  let toolName = requireStringField(params, "name")
+  if toolName.len == 0:
+    raise newException(ValueError, "Tool name cannot be empty")
+
+  let args = if params.hasKey("arguments"): params["arguments"] else: newJObject()
+  
+  var contextHandler: McpToolHandlerWithContext
+  var regularHandler: McpToolHandler
+  var hasContextHandler = false
+  var hasRegularHandler = false
+
+  withLock toolsLock:
+    if toolName in server.contextAwareToolHandlers:
+      contextHandler = server.contextAwareToolHandlers[toolName]
+      hasContextHandler = true
+    elif toolName in server.toolHandlers:
+      regularHandler = server.toolHandlers[toolName]
+      hasRegularHandler = true
+    else:
+      raise newException(ValueError, "Tool not found: " & toolName)
+
+  let requestCtx = if ctx != nil: ctx else: newMcpRequestContextWithServer(server)
+  if server.enableContextLogging:
+    requestCtx.logMessage("info", "Executing Tool: " & toolName)
+
+  let res = if hasContextHandler:
+    contextHandler(requestCtx, args)
+  else:
+    regularHandler(args)
+  
+  # Create response manually to avoid GC safety issues
+  var responseJson = newJObject()
+  responseJson["content"] = newJArray()
+  for content in res.content:
+    var contentJson = newJObject()
+    contentJson["type"] = newJString(content.`type`)
+    case content.kind:
+    of TextContent:
+      contentJson["text"] = newJString(content.text)
+    of ImageContent:
+      contentJson["data"] = newJString(content.data)
+      contentJson["mimeType"] = newJString(content.mimeType)
+    of ResourceContent:
+      # Serialize the nested resource contents
+      var resourceJson = newJObject()
+      resourceJson["uri"] = newJString(content.resource.uri)
+      if content.resource.mimeType.isSome:
+        resourceJson["mimeType"] = newJString(content.resource.mimeType.get)
+      contentJson["resource"] = resourceJson
+    responseJson["content"].add(contentJson)
+  return responseJson
+
 proc handleResourcesList(server: McpServer): JsonNode {.gcsafe.} =
   var resources: seq[McpResource] = @[]
   withLock resourcesLock:
