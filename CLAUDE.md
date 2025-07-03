@@ -410,3 +410,6 @@ mcpTool:
 - Do not add comments that reflect what has changed, we use git for change tracking
 - Only describe current code
 - Do not add unnecessary commentary or explain code that is self-explanatory
+
+## Import Guidelines
+- **Prefer to import full modules instead of only importing specific symbols**
