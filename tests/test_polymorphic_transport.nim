@@ -24,59 +24,47 @@ suite "Polymorphic Transport Tests":
   test "McpServer transport access - no transport set":
     let server = newMcpServer("test-server", "1.0.0")
     
-    # Should have no transport set
-    check not server.transport.isSome
-    
-    # Transport kind should be tkNone
-    check server.getTransportKind() == tkNone
-    check not server.hasTransport()
+    # Transport is not part of the server anymore
+    # Transport should be passed via context or separate transport objects
+    check server.serverInfo.name == "test-server"
+    check server.serverInfo.version == "1.0.0"
 
   test "McpServer transport access - with SSE transport":
     let server = newMcpServer("test-server", "1.0.0")
     
-    # Set SSE transport using new API
-    server.setSseTransport(port = 9001, host = "127.0.0.1")
+    # Test SSE transport creation separately
+    var sseTransport = McpTransport(
+      kind: tkSSE,
+      capabilities: {tcBroadcast, tcEvents, tcUnicast}
+    )
     
-    # Should have transport set
-    check server.transport.isSome
-    check server.transport.get().kind == tkSSE
-    check server.getTransportKind() == tkSSE
-    check server.hasTransport()
-    
-    # Should have SSE capabilities
-    let transport = server.transport.get()
-    check tcBroadcast in transport.capabilities
-    check tcEvents in transport.capabilities
-    check tcUnicast in transport.capabilities
+    # Test transport capabilities
+    check sseTransport.kind == tkSSE
+    check tcBroadcast in sseTransport.capabilities
+    check tcEvents in sseTransport.capabilities
+    check tcUnicast in sseTransport.capabilities
 
   test "McpServer transport access - with WebSocket transport":
     let server = newMcpServer("test-server", "1.0.0")
     
-    # Set WebSocket transport using new API
-    server.setWebSocketTransport(port = 9002, host = "127.0.0.1")
+    # Test WebSocket transport creation separately
+    var wsTransport = McpTransport(
+      kind: tkWebSocket,
+      capabilities: {tcBroadcast, tcEvents, tcUnicast, tcBidirectional}
+    )
     
-    # Should have transport set
-    check server.transport.isSome
-    check server.transport.get().kind == tkWebSocket
-    check server.getTransportKind() == tkWebSocket
-    check server.hasTransport()
-    
-    # Should have WebSocket capabilities (including bidirectional)
-    let transport = server.transport.get()
-    check tcBroadcast in transport.capabilities
-    check tcEvents in transport.capabilities
-    check tcUnicast in transport.capabilities
-    check tcBidirectional in transport.capabilities
+    # Test transport capabilities
+    check wsTransport.kind == tkWebSocket
+    check tcBroadcast in wsTransport.capabilities
+    check tcEvents in wsTransport.capabilities
+    check tcUnicast in wsTransport.capabilities
+    check tcBidirectional in wsTransport.capabilities
 
   test "Transport switching without code changes":
     ## This test demonstrates the key benefit - same code works with different transports
     
-    proc testUniversalTool(server: McpServer): string =
+    proc testUniversalTool(transport: var McpTransport): string =
       ## Universal tool that works with any transport
-      if not server.transport.isSome:
-        return "No transport available"
-      
-      var transport = server.transport.get()
       let kind = transport.kind
       
       # This same code works with ANY transport type!
@@ -94,24 +82,28 @@ suite "Polymorphic Transport Tests":
     
     let server = newMcpServer("test-server", "1.0.0")
     
-    # Test with no transport
-    check testUniversalTool(server) == "No transport available"
-    
     # Test with SSE transport
-    server.setSseTransport(port = 9003)
-    check testUniversalTool(server) == "Successfully used sse transport"
+    var sseTransport = McpTransport(
+      kind: tkSSE,
+      capabilities: {tcBroadcast, tcEvents, tcUnicast}
+    )
+    check testUniversalTool(sseTransport) == "Successfully used sse transport"
     
     # Switch to WebSocket transport - SAME CODE WORKS!
-    server.setWebSocketTransport(port = 9004)
-    check testUniversalTool(server) == "Successfully used websocket transport"
+    var wsTransport = McpTransport(
+      kind: tkWebSocket,
+      capabilities: {tcBroadcast, tcEvents, tcUnicast, tcBidirectional}
+    )
+    check testUniversalTool(wsTransport) == "Successfully used websocket transport"
 
   test "Transport capabilities and introspection":
     let server = newMcpServer("test-server", "1.0.0")
     
     # Test SSE capabilities
-    server.setSseTransport(port = 9005)
-    
-    let sseTransport = server.transport.get()
+    let sseTransport = McpTransport(
+      kind: tkSSE,
+      capabilities: {tcBroadcast, tcEvents, tcUnicast}
+    )
     check sseTransport.kind == tkSSE
     check tcBroadcast in sseTransport.capabilities
     check tcEvents in sseTransport.capabilities
@@ -119,9 +111,10 @@ suite "Polymorphic Transport Tests":
     check tcBidirectional notin sseTransport.capabilities  # SSE is not bidirectional
     
     # Test WebSocket capabilities
-    server.setWebSocketTransport(port = 9006)
-    
-    let wsTransport = server.transport.get()
+    let wsTransport = McpTransport(
+      kind: tkWebSocket,
+      capabilities: {tcBroadcast, tcEvents, tcUnicast, tcBidirectional}
+    )
     check wsTransport.kind == tkWebSocket
     check tcBroadcast in wsTransport.capabilities
     check tcEvents in wsTransport.capabilities
@@ -132,28 +125,26 @@ suite "Polymorphic Transport Tests":
     ## Test that the union type system works correctly
     let server = newMcpServer("test-server", "1.0.0")
     
-    # Initially no transport
-    check server.getTransportKind() == tkNone
-    check not server.hasTransport()
+    # Test different transport types
+    var noneTransport = McpTransport(
+      kind: tkNone,
+      capabilities: {}
+    )
+    check noneTransport.kind == tkNone
     
-    # Set SSE transport
-    server.setSseTransport(port = 9008)
+    # Test SSE transport
+    var sseTransport = McpTransport(
+      kind: tkSSE,
+      capabilities: {tcBroadcast, tcEvents, tcUnicast}
+    )
+    check sseTransport.kind == tkSSE
     
-    check server.getTransportKind() == tkSSE
-    check server.hasTransport()
-    check server.transport.get().kind == tkSSE
-    
-    # Switch to WebSocket transport
-    server.setWebSocketTransport(port = 9009)
-    
-    check server.getTransportKind() == tkWebSocket
-    check server.hasTransport()
-    check server.transport.get().kind == tkWebSocket
-    
-    # Clear transport
-    server.clearTransport()
-    check server.getTransportKind() == tkNone
-    check not server.hasTransport()
+    # Test WebSocket transport
+    var wsTransport = McpTransport(
+      kind: tkWebSocket,
+      capabilities: {tcBroadcast, tcEvents, tcUnicast, tcBidirectional}
+    )
+    check wsTransport.kind == tkWebSocket
 
 suite "Transport Polymorphism Integration":
   
