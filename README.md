@@ -20,7 +20,7 @@
 - **Server Composition** - Mount multiple MCP servers with prefixes and routing for API gateways
 - **Pluggable Logging** - Flexible logging system with multiple handlers, levels, and structured output
 - **Middleware Pipeline** - Request/response transformation and processing hooks
-- **Fluent UFCS API** - Method chaining patterns for elegant server configuration
+- **Fluent API** - Method chaining patterns for elegant server configuration
 - **High Performance** - Mummy based HTTP and WebSockets implementation and modern taskpools for stdio transport
 - **Comprehensive Testing** - Full test suite covering all features and edge cases
 - **Minimal Dependencies** - Uses only essential, well-maintained packages
@@ -38,7 +38,7 @@ nimble install nimcp
 ```nim
 import nimcp
 
-mcpServer("my-server", "1.0.0"):
+let server = mcpServer("my-server", "1.0.0"):
   
   mcpTool:
     proc echo(text: string): string =
@@ -49,19 +49,19 @@ mcpServer("my-server", "1.0.0"):
     proc add(a: float, b: float): string =
       ## Add two numbers together
       return $fmt"Result: {a + b}"
-```
 
-Run your server with:
-
-```nim
 when isMainModule:
-  runServer()  # Uses stdio transport (default)
+  # Use stdio transport (default):
+  let transport = newStdioTransport()
+  transport.serve(server)
   
-  # Or specify HTTP transport:
-  # runServer(HttpTransport(8080, "127.0.0.1"))
+  # Or use HTTP transport:
+  # let transport = newMummyTransport(8080, "127.0.0.1")
+  # transport.serve(server)
   
-  # Or specify WebSocket transport for real-time communication:
-  # runServer(WebSocketTransport(8080, "127.0.0.1"))
+  # Or use WebSocket transport for real-time communication:
+  # let transport = newWebSocketTransport(8080, "127.0.0.1")
+  # transport.serve(server)
 ```
 
 That's it! Your MCP server is ready to run.
@@ -92,16 +92,20 @@ mcpTool:
     return fmt"Result: {a + b}"
 ```
 
-**Context-Aware Tools** - Advanced functions that also receive server context for accessing transport-specific features:
+**Context-Aware Tools** - Advanced functions that also receive server context for accessing server state and request information:
 ```nim
 # Context aware tools need to have first parameter being an McpRequestContext
 mcpTool:
-  proc notifyTool(ctx: McpRequestContext, args: JsonNode): string =
-    ## Send real-time notifications via SSE transport
-    let server = ctx.getServer()
-    let transport = server.getCustomData("sse_transport", SseTransport)
-    transport.broadcastMessage(%*{"message": "Hello from server!"})
-    return "Notification sent"
+  proc notifyTool(ctx: McpRequestContext, args: JsonNode): McpToolResult =
+    ## Log request and track progress
+    ctx.logMessage("info", "Processing notification request")
+    ctx.reportProgress("Processing...", 0.5)
+    
+    # Your notification logic here
+    let message = args.getOrDefault("message", %"").getStr()
+    
+    ctx.reportProgress("Complete!", 1.0)
+    return McpToolResult(content: @[createTextContent("Notification: " & message)])
 ```
 
 **When to use Context-Aware Tools:**
@@ -175,7 +179,8 @@ server.registerTool(tool, customHandler)
 
 # Run the server
 try:
-  server.runStdio()
+  let transport = newStdioTransport()
+  transport.serve(server)
 finally:
   server.shutdown()
 ```
@@ -208,7 +213,7 @@ Check out the `examples/` directory for comprehensive examples:
 - [`resource_templates_example.nim`](examples/resource_templates_example.nim) - Dynamic URI patterns with parameter extraction
 - [`server_composition_example.nim`](examples/server_composition_example.nim) - Server mounting and API gateway patterns
 - [`logging_example.nim`](examples/logging_example.nim) - Pluggable logging system with multiple handlers
-- [`fluent_api_example.nim`](examples/fluent_api_example.nim) - Method chaining and fluent UFCS API
+- [`fluent_api_example.nim`](examples/fluent_api_example.nim) - Method chaining and fluent API patterns
 - [`enhanced_calculator.nim`](examples/enhanced_calculator.nim) - Comprehensive example showcasing all features
 - [`sse_notifications_demo.nim`](examples/sse_notifications_demo.nim) - Server-initiated events and real-time notifications with context-aware tools
 - [`sse_notifications_macro.nim`](examples/sse_notifications_macro.nim) - Mixed approach: macro API + manual context-aware registration  

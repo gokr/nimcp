@@ -98,11 +98,11 @@ This directory contains comprehensive examples demonstrating NimCP's full featur
 - **Best for**: Production deployments requiring comprehensive logging
 
 
-### `fluent_api_example.nim` - Fluent UFCS API
+### `fluent_api_example.nim` - Fluent API
 - **Features**:
   - Method chaining patterns for elegant configuration
-  - Uniform Function Call Syntax (UFCS) examples
-  - Fluent builder patterns for server setup
+  - Fluent builder patterns for server setup  
+  - Demonstrates `.withTool()`, `.withResource()`, `.withPrompt()` patterns
 - **Best for**: Elegant API design and configuration patterns
 
 ### `enhanced_calculator.nim` - Comprehensive Feature Showcase
@@ -294,4 +294,4 @@ server.logger.addHandler(newStructuredLogHandler())
 - Pluggable logging system
 - Real-time communication via WebSocket transport
 - Middleware pipeline support
-- Fluent UFCS API patterns
+- Fluent API patterns

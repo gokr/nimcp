@@ -149,7 +149,7 @@ import nimcp
 import math, strformat
 
 # The macro way - schemas write themselves!
-mcpServer("macro-server", "1.0.0"):
+let server = mcpServer("macro-server", "1.0.0"):
 
   # Simple addition - no manual schema needed
   mcpTool:
@@ -207,7 +207,8 @@ mcpServer("macro-server", "1.0.0"):
 when isMainModule:
   echo "🎩 Starting the Macro Server..."
   echo "Schemas write themselves!"
-  runServer()  # Uses stdio by default
+  let transport = newStdioTransport()
+  transport.serve(server)  # Uses stdio by default
 ```
 
 ### The Magic Revealed
@@ -257,7 +258,7 @@ Create `personality_server.nim`:
 import nimcp
 import times, strutils, random
 
-mcpServer("personality-server", "1.0.0"):
+let server = mcpServer("personality-server", "1.0.0"):
 
   # Echo with attitude
   mcpTool:
@@ -309,7 +310,8 @@ mcpServer("personality-server", "1.0.0"):
 
 when isMainModule:
   echo "🎭 Starting the Personality Server..."
-  runServer()
+  let transport = newStdioTransport()
+  transport.serve(server)
 ```
 
 ---
@@ -324,7 +326,7 @@ Create `prompt_server.nim`:
 import nimcp
 import json, tables, strformat
 
-mcpServer("prompt-server", "1.0.0"):
+let server = mcpServer("prompt-server", "1.0.0"):
 
   # Simple greeting prompt
   mcpPrompt("greeting", "A friendly greeting prompt", @[]):
@@ -359,7 +361,8 @@ mcpServer("prompt-server", "1.0.0"):
 
 when isMainModule:
   echo "🎯 Starting Prompt Server..."
-  runServer()
+  let transport = newStdioTransport()
+  transport.serve(server)
 ```
 
 ---
@@ -374,7 +377,7 @@ Create `web_server.nim`:
 import nimcp
 import math, strformat
 
-mcpServer("web-calculator", "1.0.0"):
+let server = mcpServer("web-calculator", "1.0.0"):
 
   mcpTool:
     proc add(a: float, b: float): string =
@@ -404,7 +407,8 @@ when isMainModule:
   echo "- POST http://127.0.0.1:8080/mcp      # MCP JSON-RPC"
 
   # Switch from stdio to HTTP
-  runServer(HttpTransport(8080, "127.0.0.1"))
+  let transport = newMummyTransport(8080, "127.0.0.1")
+  transport.serve(server)
 ```
 
 ### Testing Your Web Server
@@ -448,7 +452,7 @@ Create `websocket_server.nim`:
 import nimcp
 import math, times, strformat
 
-mcpServer("websocket-server", "1.0.0"):
+let server = mcpServer("websocket-server", "1.0.0"):
 
   mcpTool:
     proc liveAdd(a: float, b: float): string =
@@ -488,7 +492,8 @@ ws.onmessage = (event) => {
 """
 
   # WebSocket transport
-  runServer(WebSocketTransport(8080, "127.0.0.1"))
+  let transport = newWebSocketTransport(8080, "127.0.0.1")
+  transport.serve(server)
 ```
 
 ### WebSocket Communication Flow
@@ -571,7 +576,7 @@ Create `secure_server.nim`:
 import nimcp
 import math, strformat, base64, strutils
 
-mcpServer("secure-server", "1.0.0"):
+let server = mcpServer("secure-server", "1.0.0"):
 
   mcpTool:
     proc secureAdd(a: float, b: float): string =
@@ -615,16 +620,14 @@ when isMainModule:
   echo ""
 
   # Create HTTP transport with authentication
-  let transport = HttpTransport(8080, "127.0.0.1")
-
-  # Add authentication middleware
-  transport.addAuthenticator(proc(token: string): bool =
+  proc tokenValidator(token: string): bool =
     # In real life, you'd check this against a database or JWT
     # But for now, we'll just check for our super secure token
     return token == "super-secret-token-123"
-  )
 
-  runServer(transport)
+  let authConfig = newAuthConfig(tokenValidator, requireHttps = false)
+  let transport = newMummyTransport(8080, "127.0.0.1", authConfig)
+  transport.serve(server)
 ```
 
 ### Authentication Flow
@@ -654,7 +657,7 @@ For production use, here's a more robust authentication setup:
 ```nim
 import nimcp, jwt, times, json
 
-mcpServer("production-server", "1.0.0"):
+let server = mcpServer("production-server", "1.0.0"):
 
   mcpTool:
     proc sensitiveOperation(data: string): string =
@@ -662,10 +665,8 @@ mcpServer("production-server", "1.0.0"):
       return fmt"Processing sensitive data: {data.len} characters"
 
 when isMainModule:
-  let transport = HttpTransport(8080, "127.0.0.1")
-
-  # JWT-based authentication
-  transport.addAuthenticator(proc(token: string): bool =
+  # JWT-based authentication  
+  proc jwtValidator(token: string): bool =
     try:
       let jwt = token.parseJWT()
       let now = getTime().toUnix()
@@ -682,9 +683,10 @@ when isMainModule:
       return jwt.verify("your-secret-key")
     except:
       return false
-  )
 
-  runServer(transport)
+  let authConfig = newAuthConfig(jwtValidator, requireHttps = true)
+  let transport = newMummyTransport(8080, "127.0.0.1", authConfig)
+  transport.serve(server)
 ```
 
 ### Try This! 🧪
@@ -707,7 +709,7 @@ Create `advanced_server.nim`:
 import nimcp
 import times, json, strformat, asyncdispatch
 
-mcpServer("advanced-server", "1.0.0"):
+let server = mcpServer("advanced-server", "1.0.0"):
 
   # Context-aware tool that tracks request information
   mcpToolWithContext:
@@ -776,28 +778,12 @@ when isMainModule:
   echo "- Middleware support"
   echo ""
 
-  # Add custom middleware
-  let server = mcpServerInstance
+  # Server is already created by the macro above
+  # You can add custom middleware if needed (this is an advanced feature)
+  # Note: Middleware API is available but requires specific setup
 
-  # Request timing middleware
-  server.addMiddleware(proc(req: McpRequest, next: proc(): McpResponse): McpResponse =
-    let startTime = cpuTime()
-    let response = next()
-    let duration = cpuTime() - startTime
-
-    echo fmt"Request {req.id} took {duration:.3f}s"
-    return response
-  )
-
-  # Request logging middleware
-  server.addMiddleware(proc(req: McpRequest, next: proc(): McpResponse): McpResponse =
-    echo fmt"📝 {req.`method`} request from client"
-    let response = next()
-    echo fmt"✅ Response sent with status: {response.error.isNone}"
-    return response
-  )
-
-  runServer()
+  let transport = newStdioTransport()
+  transport.serve(server)
 ```
 
 ### Concurrent Processing
@@ -807,7 +793,7 @@ For handling multiple requests efficiently:
 ```nim
 import nimcp, taskpools
 
-mcpServer("concurrent-server", "1.0.0"):
+let server = mcpServer("concurrent-server", "1.0.0"):
 
   mcpTool:
     proc parallelSum(numbers: seq[float]): string =
@@ -838,7 +824,8 @@ mcpServer("concurrent-server", "1.0.0"):
       return fmt"Parallel sum of {numbers.len} numbers: {totalSum}"
 
 when isMainModule:
-  runServer()
+  let transport = newStdioTransport()
+  transport.serve(server)
 ```
 
 ### Error Handling and Resilience
@@ -846,7 +833,7 @@ when isMainModule:
 ```nim
 import nimcp
 
-mcpServer("resilient-server", "1.0.0"):
+let server = mcpServer("resilient-server", "1.0.0"):
 
   mcpTool:
     proc robustDivision(a: float, b: float): string =
@@ -872,7 +859,8 @@ mcpServer("resilient-server", "1.0.0"):
         return fmt"❌ Unexpected Error: {e.msg} (this shouldn't happen, but here we are)"
 
 when isMainModule:
-  runServer()
+  let transport = newStdioTransport()
+  transport.serve(server)
 ```
 
 ### Try This! 🧪
@@ -897,7 +885,8 @@ when isMainModule:
 lsof -i :8080
 
 # Try a different port
-runServer(HttpTransport(8081, "127.0.0.1"))
+let transport = newMummyTransport(8081, "127.0.0.1")
+transport.serve(server)
 
 # Check for compilation errors
 nim c --verbosity:2 your_server.nim
@@ -908,7 +897,7 @@ nim c --verbosity:2 your_server.nim
 **Symptoms**: `tools/list` returns empty array
 
 **Common causes**:
-- Forgot to call `runServer()` in `when isMainModule`
+- Forgot to call `transport.serve(server)` in `when isMainModule`
 - Macro syntax errors
 - Missing imports
 
