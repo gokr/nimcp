@@ -2,6 +2,7 @@
 ## Shows how to compose multiple MCP servers together
 
 import ../src/nimcp, json, options, tables, sequtils
+import ../src/nimcp/composed_server
 
 # Calculator service
 proc addTool(args: JsonNode): McpToolResult =
@@ -115,12 +116,12 @@ when isMainModule:
   )
   
   # Create composed server
-  let composedServer = newComposedServer("api-gateway", "1.0.0")
+  let apiGateway = newComposedServer("api-gateway", "1.0.0")
   
   # Mount services with different prefixes
-  composedServer.mountServerAt("/calc", calculatorServer, some("calc_"))
-  composedServer.mountServerAt("/files", fileServer, some("file_"))
-  composedServer.mountServerAt("/users", userServer, some("user_"))
+  apiGateway.mountServerAt("/calc", calculatorServer, some("calc_"))
+  apiGateway.mountServerAt("/files", fileServer, some("file_"))
+  apiGateway.mountServerAt("/users", userServer, some("user_"))
   
   echo "✓ Created composed server with mounted services:"
   echo "  - Calculator service at /calc with prefix 'calc_'"
@@ -132,17 +133,17 @@ when isMainModule:
   echo "Tool routing demonstration:"
   
   # Find mount points for prefixed tools
-  let calcMount = composedServer.findMountPointForTool("calc_add")
+  let calcMount = apiGateway.findMountPointForTool("calc_add")
   if calcMount.isSome:
     let mount = calcMount.get()
     echo "✓ Found mount point for 'calc_add': " & mount.path & " (prefix: " & mount.prefix.get("none") & ")"
   
-  let fileMount = composedServer.findMountPointForTool("file_read_file")
+  let fileMount = apiGateway.findMountPointForTool("file_read_file")
   if fileMount.isSome:
     let mount = fileMount.get()
     echo "✓ Found mount point for 'file_read_file': " & mount.path & " (prefix: " & mount.prefix.get("none") & ")"
   
-  let userMount = composedServer.findMountPointForTool("user_get_user")
+  let userMount = apiGateway.findMountPointForTool("user_get_user")
   if userMount.isSome:
     let mount = userMount.get()
     echo "✓ Found mount point for 'user_get_user': " & mount.path & " (prefix: " & mount.prefix.get("none") & ")"
@@ -151,7 +152,7 @@ when isMainModule:
   
   # Show mount point information
   echo "Mount points information:"
-  let mountInfo = composedServer.getMountedServerInfo()
+  let mountInfo = apiGateway.getMountedServerInfo()
   for path, info in mountInfo.pairs:
     echo "  " & path & ":"
     echo "    Server: " & info["serverName"].getStr() & " v" & info["serverVersion"].getStr()
@@ -171,10 +172,10 @@ when isMainModule:
   
   # Show unmounting
   echo "Unmounting demonstration:"
-  let unmounted = composedServer.unmountServer("/files")
+  let unmounted = apiGateway.unmountServer("/files")
   echo "✓ Unmounted /files service: " & $unmounted
   
-  echo "Remaining mount points: " & $composedServer.listMountPoints().mapIt(it.path)
+  echo "Remaining mount points: " & $apiGateway.listMountPoints().mapIt(it.path)
   
   echo ""
   echo "🎯 Server Composition example completed!"
