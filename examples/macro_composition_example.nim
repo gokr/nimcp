@@ -5,7 +5,7 @@ import ../src/nimcp/mcpmacros
 import ../src/nimcp/server
 import ../src/nimcp/stdio_transport
 import ../src/nimcp/composed_server
-import json, math, strformat, os, strutils, options
+import json, math, strformat, os, std/syncio, strutils, options
 
 # Calculator service using the macro system
 let calculatorServer = mcpServer("calculator-service", "1.0.0"):
@@ -46,7 +46,7 @@ let fileServer = mcpServer("file-service", "1.0.0"):
       ## Read contents of a file
       ## - path: Path to the file to read
       try:
-        return readFile(path)
+        return syncio.readFile(path)
       except IOError as e:
         return fmt"Error reading file: {e.msg}"
   
