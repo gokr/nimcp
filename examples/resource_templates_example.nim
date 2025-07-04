@@ -8,7 +8,7 @@ proc handleUserResource(ctx: McpRequestContext, uri: string, params: Table[strin
   let userId = params.getOrDefault("id", "unknown")
   
   # Log the request with context
-  ctx.logMessage("info", "Accessing user resource for user: " & userId)
+  ctx.info("Accessing user resource for user: " & userId)
   
   result = McpResourceContents(
     uri: uri,
@@ -24,7 +24,7 @@ proc handleFileResource(ctx: McpRequestContext, uri: string, params: Table[strin
   ## Handle file resource requests with extracted file path
   let filePath = params.getOrDefault("path", "unknown")
   
-  ctx.logMessage("info", "Accessing file resource: " & filePath)
+  ctx.info("Accessing file resource: " & filePath)
   
   result = McpResourceContents(
     uri: uri,
@@ -41,7 +41,7 @@ proc handleProjectResource(ctx: McpRequestContext, uri: string, params: Table[st
   let projectId = params.getOrDefault("projectId", "unknown")
   let issueId = params.getOrDefault("issueId", "unknown")
   
-  ctx.logMessage("info", "Accessing project " & projectId & " issue " & issueId)
+  ctx.info("Accessing project " & projectId & " issue " & issueId)
   
   result = McpResourceContents(
     uri: uri,

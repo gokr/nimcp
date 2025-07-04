@@ -8,21 +8,21 @@ proc exampleTool(ctx: McpRequestContext, args: JsonNode): McpToolResult =
   let input = args.getOrDefault("input").getStr("default")
   
   # Log with context
-  ctx.logMessage("info", "Processing input: " & input)
+  ctx.info("Processing input: " & input)
   
-  # Simulate some work with progress updates
-  ctx.reportProgress("Starting processing...", 0.0)
+  # Simulate some work with status updates via logging
+  ctx.info("Starting processing...")
   
   # Simulate error for demonstration
   if input == "error":
-    ctx.logMessage("error", "Simulated error occurred for input: " & input)
+    ctx.error("Simulated error occurred for input: " & input)
     raise newException(ValueError, "Simulated error for input: " & input)
   
-  ctx.reportProgress("Halfway done...", 0.5)
-  ctx.reportProgress("Almost finished...", 0.9)
-  ctx.reportProgress("Complete!", 1.0)
+  ctx.info("Processing halfway complete...")
+  ctx.info("Processing almost finished...")
+  ctx.info("Processing complete!")
   
-  ctx.logMessage("info", "Processing completed successfully")
+  ctx.info("Processing completed successfully")
   
   return McpToolResult(
     content: @[McpContent(
@@ -76,7 +76,7 @@ when isMainModule:
   # Test context logging with requests
   echo "5. Testing context-aware logging:"
   let ctx = newMcpRequestContext("test-request")
-  ctx.logMessage("info", "Request started for operation: example")
+  ctx.info("Request started for operation: example")
   
   # Simulate tool execution with logging
   echo "6. Simulating tool execution:"

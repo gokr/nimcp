@@ -32,10 +32,10 @@ let server = mcpServer("streaming-example", "1.0.0"):
       if duration <= 0 or duration > 10:
         return "Error: Duration must be between 1 and 10 seconds"
       
-      # Simulate work with progress updates
+      # Simulate work with status updates
       for i in 1..duration:
         sleep(1000)
-        ctx.reportProgress(fmt"Step {i} of {duration}", (duration / i))
+        ctx.info(fmt"Completed step {i} of {duration}")
       
       return fmt"Long task completed in {duration} seconds"
 
