@@ -82,8 +82,11 @@ proc handleJsonRpcMessage(transport: WebSocketTransport, server: McpServer, webs
       server.handleNotification(jsonRpcRequest)
       return
     
-    # Handle requests that expect responses
-    let response = server.handleRequest(jsonRpcRequest)
+    # Handle requests that expect responses with transport access
+    let capabilities = {tcBidirectional, tcUnicast, tcEvents}  # WebSocket supports bidirectional real-time events
+    let mcpTransport = McpTransport(kind: tkWebSocket, capabilities: capabilities, wsData: WebSocketTransportData(
+      port: transport.base.port, host: transport.base.host, authConfig: cast[pointer](addr transport.base.authConfig)))
+    let response = server.handleRequest(mcpTransport, jsonRpcRequest)
     
     # Send response back through WebSocket
     websocket.send($response)

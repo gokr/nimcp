@@ -65,7 +65,7 @@ proc newMcpServer*(name: string, version: string): McpServer =
 
 
 # Server-aware context creation
-proc newMcpRequestContextWithServer(server: McpServer, transport: McpTransport, requestId: string = ""): McpRequestContext =
+proc newMcpRequestContextWithServer*(server: McpServer, transport: McpTransport, requestId: string = ""): McpRequestContext =
   ## Create a new request context with server and transport reference
   let id = if requestId.len > 0: requestId else: $now().toTime().toUnix() & "_" & $rand(1000)
   

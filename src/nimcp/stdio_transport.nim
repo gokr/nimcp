@@ -3,24 +3,15 @@
 ## This module provides the stdio transport implementation for MCP servers.
 ## It handles JSON-RPC communication over stdin/stdout with concurrent request processing.
 
-import json, locks, options, deques
+import json, locks, options
 import taskpools, cpuinfo
 import types, protocol, server, composed_server, logging
 
 type 
-  InitializationState* = enum
-    ## MCP initialization state tracking for protocol compliance
-    isNotInitialized = "not_initialized"
-    isInitializing = "initializing" 
-    isInitialized = "initialized"
-
   StdioTransport* = ref object
-    ## Stdio transport implementation for MCP servers with MCP protocol compliance
+    ## Stdio transport implementation for MCP servers
     taskpool: Taskpool
     stdoutLock: Lock
-    initState: InitializationState
-    initLock: Lock
-    queuedRequests: Deque[string]  # Queue for requests during initialization
 
 proc newStdioTransport*(numThreads: int = 0): StdioTransport =
   ## Args:
@@ -29,25 +20,12 @@ proc newStdioTransport*(numThreads: int = 0): StdioTransport =
   let threads = if numThreads > 0: numThreads else: countProcessors()
   result.taskpool = Taskpool.new(numThreads = threads)
   initLock(result.stdoutLock)
-  initLock(result.initLock)
-  result.initState = isNotInitialized
-  result.queuedRequests = initDeque[string]()
 
 proc safeEcho(transport: StdioTransport, msg: string) =
   ## Thread-safe output handling
   withLock transport.stdoutLock:
     echo msg
     stdout.flushFile()
-
-proc isInitializeRequest(requestLine: string): bool =
-  ## Check if a request line contains an initialize method (MCP protocol compliance)
-  try:
-    let parsed = parseJson(requestLine)
-    if parsed.hasKey("method") and parsed["method"].kind == JString:
-      return parsed["method"].getStr() == "initialize"
-  except:
-    discard
-  return false
 
 # Request processing task for taskpools
 proc processRequestTask[T](transport: ptr StdioTransport, server: ptr T, requestLine: string) {.gcsafe.} =
@@ -70,11 +48,9 @@ proc processRequestTask(transport: StdioTransport, server: McpServer, line: stri
   ## Had to extract this proc to avoid segfaults with taskpools and generics
   transport.taskpool.spawn processRequestTask[McpServer](addr transport, addr server, line)
 
-# Main stdio transport serving procedure with MCP protocol compliance
+# Main stdio transport serving procedure
 proc serve*[T: ComposedServer | McpServer](transport: StdioTransport, server: T) =
-  ## Serve the MCP server with stdio transport ensuring MCP protocol compliance
-  ## - Initialize requests are processed synchronously as required by MCP spec
-  ## - Other requests are queued until initialization completes, then processed concurrently
+  ## Serve the MCP server with stdio transport
   
   # Configure logging to use stderr to avoid interference with MCP protocol on stdout
   server.logger.redirectToStderr()
@@ -96,7 +72,10 @@ proc serve*[T: ComposedServer | McpServer](transport: StdioTransport, server: T)
           # Handle notification (no response needed)
           discard
         else:
-          let response = server.handleRequest(request)
+          # Create transport instance for context access
+          let capabilities = {tcUnicast}  # Stdio supports unicast only
+          let mcpTransport = McpTransport(kind: tkStdio, capabilities: capabilities)
+          let response = server.handleRequest(mcpTransport, request)
           echo $response
       except Exception as e:
         let errorResponse = createJsonRpcError(requestId, ParseError, "Parse error: " & e.msg)

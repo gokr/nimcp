@@ -50,7 +50,7 @@
 ## clients to choose their preferred transport (stdio, HTTP, WebSocket, SSE) from a single server instance.
 
 import mummy, mummy/routers, mummy/common, json, strutils, strformat, options, tables, locks
-import server, types, protocol, auth, connection_pool, http_common
+import server, types, protocol, auth, connection_pool, http_common, cors
 
 type
   MummySseConnection* = ref object
@@ -149,20 +149,14 @@ proc setupRoutes(transport: SseTransport, server: McpServer) =
   
   # CORS preflight for SSE endpoint
   transport.base.router.options(transport.sseEndpoint, proc (request: Request) =
-    var headers: HttpHeaders
-    headers["Access-Control-Allow-Origin"] = "*"
-    headers["Access-Control-Allow-Headers"] = "Authorization, Content-Type"
-    headers["Access-Control-Allow-Methods"] = "GET, POST, OPTIONS"
+    let headers = corsHeadersFor("GET, OPTIONS")
     request.respond(200, headers = headers)
   )
   
   # Message endpoint - handles client-to-server POST requests
   transport.base.router.post(transport.messageEndpoint, proc (request: Request) =
     # CORS headers
-    var corsHeaders: HttpHeaders
-    corsHeaders["Access-Control-Allow-Origin"] = "*"
-    corsHeaders["Access-Control-Allow-Headers"] = "Authorization, Content-Type"
-    corsHeaders["Access-Control-Allow-Methods"] = "GET, POST, OPTIONS"
+    var corsHeaders = corsHeadersFor("POST, GET, OPTIONS")
     corsHeaders["Content-Type"] = "application/json"
     
     try:
@@ -182,8 +176,12 @@ proc setupRoutes(transport: SseTransport, server: McpServer) =
       # Parse the JSON-RPC request using the existing protocol parser
       let jsonRpcRequest = parseJsonRpcMessage(request.body)
       
-      # Use the existing server's request handler
-      let response = server.handleRequest(jsonRpcRequest)
+      # Use the existing server's request handler with transport access
+      let capabilities = {tcBroadcast, tcUnicast, tcEvents}  # SSE supports broadcasting and events
+      let mcpTransport = McpTransport(kind: tkSSE, capabilities: capabilities, sseData: SseTransportData(
+        port: transport.base.port, host: transport.base.host, authConfig: cast[pointer](addr transport.base.authConfig),
+        sseEndpoint: transport.sseEndpoint, messageEndpoint: transport.messageEndpoint))
+      let response = server.handleRequest(mcpTransport, jsonRpcRequest)
       
       # Send response back via SSE to all connections
       # Per MCP specification, tool responses should only be sent via SSE events
@@ -206,10 +204,7 @@ proc setupRoutes(transport: SseTransport, server: McpServer) =
   
   # CORS preflight for message endpoint
   transport.base.router.options(transport.messageEndpoint, proc (request: Request) =
-    var headers: HttpHeaders
-    headers["Access-Control-Allow-Origin"] = "*"
-    headers["Access-Control-Allow-Headers"] = "Authorization, Content-Type"
-    headers["Access-Control-Allow-Methods"] = "GET, POST, OPTIONS"
+    let headers = corsHeadersFor("POST, GET, OPTIONS")
     request.respond(200, headers = headers)
   )
 

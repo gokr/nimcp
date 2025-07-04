@@ -4,7 +4,7 @@
 ## into a single server that can route requests to the appropriate mounted servers.
 
 import json, tables, options, strutils
-import types, protocol, context, server, stdio_transport, logging
+import types, protocol, context, server, logging
 
 type
   MountPoint* = object
@@ -311,6 +311,10 @@ proc handlePromptsGet*(composed: ComposedServer, params: JsonNode, ctx: McpReque
   # Call server's method directly - much more efficient than JSON-RPC overhead
   return server.handlePromptsGet(newParams, ctx)
 
+proc handlePing*(composed: ComposedServer): JsonNode =
+  ## Handle ping request - just return empty object
+  return newJObject()
+
 proc buildCapabilities*(composed: ComposedServer): McpCapabilities =
   ## Build capabilities by aggregating from all mounted servers
   result = McpCapabilities()
@@ -389,6 +393,57 @@ proc handleRequest*(composed: ComposedServer, request: JsonRpcRequest): JsonRpcR
 proc handleNotification*(composed: ComposedServer, request: JsonRpcRequest) {.gcsafe.} =
   ## Handle notification - ComposedServer doesn't need special notification handling
   discard
+
+proc handleRequest*(composed: ComposedServer, transport: McpTransport, request: JsonRpcRequest): JsonRpcResponse =
+  ## Main request handler for ComposedServer with transport access for context-aware tools
+  try:
+    let id = if request.id.isSome: request.id.get() else: JsonRpcId(kind: jridString, str: "")
+    let requestId = if id.kind == jridString: id.str else: $id.num
+    let requestCtx = newMcpRequestContextWithServer(cast[McpServer](addr composed[]), transport, requestId)
+    let responseData = case request.`method`
+    of "initialize":
+      # Initialize this composed server first
+      composed.initialized = true
+      
+      # Then propagate initialization to all mounted servers using direct method calls
+      for mountPoint in composed.mountPoints:
+        if not mountPoint.server.initialized:
+          let initParams = request.params.get(newJObject())
+          discard mountPoint.server.handleInitialize(initParams)
+          # Ensure child initialization succeeded
+          if not mountPoint.server.initialized:
+            raise newException(ValueError, "Failed to initialize mounted server: " & mountPoint.path)
+      
+      # Return standard initialize response with aggregated capabilities
+      let serverInfo = McpServerInfo(name: composed.name, version: composed.version)
+      let capabilities = composed.buildCapabilities()
+      createInitializeResponseJson(serverInfo, capabilities)
+    of "tools/list":
+      composed.handleToolsList()
+    of "tools/call":
+      composed.handleToolsCall(request.params.get(newJObject()), requestCtx)
+    of "resources/list":
+      composed.handleResourcesList()
+    of "resources/read":
+      composed.handleResourcesRead(request.params.get(newJObject()), requestCtx)
+    of "prompts/list":
+      composed.handlePromptsList()
+    of "prompts/get":
+      composed.handlePromptsGet(request.params.get(newJObject()), requestCtx)
+    of "ping":
+      %*{"message": "pong"}
+    else:
+      raise newException(ValueError, "Method not found: " & request.`method`)
+    
+    let response = createJsonRpcResponse(id, responseData)
+    return response
+    
+  except ValueError as e:
+    let error = newMcpStructuredError(InvalidParams, melError, e.msg, requestId = "")
+    return createStructuredErrorResponse(request.id.get(), error)
+  except Exception as e:
+    let error = newMcpStructuredError(InternalError, melCritical, "Internal error: " & e.msg, requestId = "")
+    return createStructuredErrorResponse(request.id.get(), error)
 
 proc shutdown*(composed: ComposedServer) =
   ## Shutdown composed server and all mounted servers
