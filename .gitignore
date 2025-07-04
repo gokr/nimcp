@@ -22,6 +22,8 @@ testresults
 *.swp
 *.swo
 *~
+.roo/
+
 
 # OS files
 .DS_Store
