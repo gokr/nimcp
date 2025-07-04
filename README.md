@@ -89,22 +89,21 @@ NimCP also supports context aware tools that also receive server context for acc
 # Context aware tools need to have first parameter being an McpRequestContext
 mcpTool:
   proc notifyTool(ctx: McpRequestContext, args: JsonNode): McpToolResult =
-    ## Log request and track progress
-    ctx.logMessage("info", "Processing notification request")
-    ctx.reportProgress("Processing...", 0.5)
+    ## Log request and track processing
+    ctx.info("Processing notification request")
     
     # Your notification logic here
     let message = args.getOrDefault("message", %"").getStr()
     
-    ctx.reportProgress("Complete!", 1.0)
+    ctx.info("Notification processing complete")
     return McpToolResult(content: @[createTextContent("Notification: " & message)])
 ```
 
 **When to use Context-Aware Tools:**
 - Server-initiated events (SSE notifications, WebSocket broadcasts)
-- Progress tracking during long operations  
 - Access to server configuration or transport-specific features
 - Custom logging or middleware integration
+- Request-specific state management
 
 **Manual Registration Methods:**
 - `server.registerTool(tool, handler)` - Regular tools

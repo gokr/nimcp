@@ -715,15 +715,13 @@ let server = mcpServer("advanced-server", "1.0.0"):
   mcpToolWithContext:
     proc contextualAdd(ctx: McpRequestContext, a: float, b: float): string =
       ## Addition with full context awareness
-      ctx.logMessage("info", fmt"Processing addition: {a} + {b}")
-      ctx.reportProgress("Calculating...", 0.5)
+      ctx.info(fmt"Processing addition: {a} + {b}")
 
       # Simulate some work
       sleep(100)
 
       let result = a + b
-      ctx.reportProgress("Complete!", 1.0)
-      ctx.logMessage("info", fmt"Result calculated: {result}")
+      ctx.info(fmt"Result calculated: {result}")
 
       return fmt"Context-aware result: {a} + {b} = {result}"
 
@@ -740,22 +738,22 @@ let server = mcpServer("advanced-server", "1.0.0"):
       let result = waitFor future
       return fmt"Async result: {n}² = {result}"
 
-  # Resource with progress tracking
-  mcpResourceWithContext("data://processing", "Data Processing", "Process data with progress updates"):
+  # Resource with status logging
+  mcpResourceWithContext("data://processing", "Data Processing", "Process data with status updates"):
     proc processData(ctx: McpRequestContext, uri: string): string =
-      ctx.reportProgress("Starting data processing...", 0.0)
+      ctx.info("Starting data processing...")
       sleep(200)
 
-      ctx.reportProgress("Processing chunk 1/3...", 0.33)
+      ctx.info("Processing chunk 1/3...")
       sleep(200)
 
-      ctx.reportProgress("Processing chunk 2/3...", 0.66)
+      ctx.info("Processing chunk 2/3...")
       sleep(200)
 
-      ctx.reportProgress("Finalizing...", 0.9)
+      ctx.info("Finalizing...")
       sleep(100)
 
-      ctx.reportProgress("Complete!", 1.0)
+      ctx.info("Processing complete!")
 
       let result = %*{
         "status": "completed",
@@ -768,11 +766,11 @@ let server = mcpServer("advanced-server", "1.0.0"):
 
 when isMainModule:
   echo "🚀 Starting Advanced Server..."
-  echo "Now with context awareness, progress tracking, and async operations!"
+  echo "Now with context awareness, structured logging, and async operations!"
   echo ""
   echo "Features:"
   echo "- Request context tracking"
-  echo "- Progress reporting"
+  echo "- Structured logging"
   echo "- Async operations"
   echo "- Detailed logging"
   echo "- Middleware support"
@@ -1017,7 +1015,7 @@ Congratulations! You've journeyed from a simple echo server to building producti
 - ✅ Build MCP servers using both manual and macro APIs
 - ✅ Handle stdio, HTTP, and WebSocket transports
 - ✅ Implement authentication and security
-- ✅ Use context-aware tools and progress tracking
+- ✅ Use context-aware tools and structured logging
 - ✅ Debug issues and optimize performance
 - ✅ Write tests and maintain code quality
 
