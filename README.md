@@ -17,7 +17,7 @@
 - **Request Context System** - Progress tracking, cancellation, and request lifecycle management
 - **Structured Error Handling** - Enhanced error types with context propagation and categorization
 - **Resource URI Templates** - Dynamic URI patterns with parameter extraction (`/users/{id}`)
-- **Server Composition** - Mount multiple MCP servers with prefixes and routing for API gateways
+- **Server Composition** - Compose multiple MCP servers into a single interface with prefixes and routing for API gateways
 - **Pluggable Logging** - Flexible logging system with multiple handlers, levels, and structured output
 - **Middleware Pipeline** - Request/response transformation and processing hooks
 - **Fluent API** - Method chaining patterns for elegant server configuration
@@ -185,6 +185,50 @@ finally:
   server.shutdown()
 ```
 
+### Server Composition
+
+NimCP supports composing multiple servers into a single interface - perfect for API gateways:
+
+```nim
+import nimcp, nimcp/composed_server
+
+# Create individual servers using macro API
+let calculatorServer = mcpServer("calculator-service", "1.0.0"):
+  mcpTool:
+    proc add(a: float, b: float): string =
+      ## Add two numbers together
+      return fmt"Result: {a + b}"
+
+let fileServer = mcpServer("file-service", "1.0.0"):
+  mcpTool:
+    proc readFile(path: string): string =
+      ## Read contents of a file
+      try:
+        return readFile(path)
+      except IOError as e:
+        return fmt"Error reading file: {e.msg}"
+
+# Compose them into a single gateway
+let apiGateway = newComposedServer("api-gateway", "1.0.0")
+
+# Mount each service with prefixes for namespacing
+apiGateway.mountServerAt("/calc", calculatorServer, some("calc_"))
+apiGateway.mountServerAt("/files", fileServer, some("file_"))
+
+# Run the composed server
+let transport = newStdioTransport()
+transport.serve(apiGateway)
+
+# Tools are now available as: calc_add, file_readFile
+```
+
+**Benefits of Composition**:
+- 🔧 **Modular architecture** - Build focused, single-purpose servers
+- 🏷️ **Namespace isolation** - Avoid tool name conflicts with prefixes  
+- 🔄 **Code reuse** - Mount the same server in multiple gateways
+- 🛡️ **Memory safety** - Uses composition over inheritance for better safety
+- 🎯 **Simple routing** - Flat delegation model, no complex hierarchies
+
 ### Error Handling
 
 NimCP automatically handles JSON-RPC errors, but you can throw exceptions in your handlers:
@@ -211,7 +255,7 @@ Check out the `examples/` directory for comprehensive examples:
 - [`websocket_calculator.nim`](examples/websocket_calculator.nim) - Calculator using macro API over WebSocket transport (real-time)
 - [`authenticated_websocket_calculator.nim`](examples/authenticated_websocket_calculator.nim) - WebSocket calculator with Bearer token authentication
 - [`resource_templates_example.nim`](examples/resource_templates_example.nim) - Dynamic URI patterns with parameter extraction
-- [`server_composition_example.nim`](examples/server_composition_example.nim) - Server mounting and API gateway patterns
+- [`macro_composition_example.nim`](examples/macro_composition_example.nim) - Server composition and API gateway patterns
 - [`logging_example.nim`](examples/logging_example.nim) - Pluggable logging system with multiple handlers
 - [`fluent_api_example.nim`](examples/fluent_api_example.nim) - Method chaining and fluent API patterns
 - [`enhanced_calculator.nim`](examples/enhanced_calculator.nim) - Comprehensive example showcasing all features
