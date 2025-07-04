@@ -26,6 +26,7 @@ proc newMcpRequestContext*(requestId: string = ""): McpRequestContext =
   
   result = McpRequestContext(
     server: nil,  # Server reference not available in this constructor
+    transport: McpTransport(),  # Empty transport for backward compatibility
     requestId: id,
     startTime: now(),
     cancelled: false,
@@ -72,6 +73,14 @@ proc logMessage*(ctx: McpRequestContext, level: string, message: string) =
   else:
     # Default logging to stdout
     echo "[" & level.toUpperAscii() & "] " & ctx.requestId & ": " & message
+
+proc sendEvent*(ctx: McpRequestContext, eventType: string, data: JsonNode, target: string = "") =
+  ## Send an event through the transport (transport-agnostic)
+  sendEvent(ctx.transport, eventType, data, target)
+
+proc broadcastMessage*(ctx: McpRequestContext, jsonMessage: JsonNode) =
+  ## Broadcast a message through the transport (transport-agnostic)
+  broadcastMessage(ctx.transport, jsonMessage)
 
 proc isCancelled*(ctx: McpRequestContext): bool =
   ## Check if the current request has been cancelled

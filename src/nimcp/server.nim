@@ -65,12 +65,13 @@ proc newMcpServer*(name: string, version: string): McpServer =
 
 
 # Server-aware context creation
-proc newMcpRequestContextWithServer(server: McpServer, requestId: string = ""): McpRequestContext =
-  ## Create a new request context with server reference
+proc newMcpRequestContextWithServer(server: McpServer, transport: McpTransport, requestId: string = ""): McpRequestContext =
+  ## Create a new request context with server and transport reference
   let id = if requestId.len > 0: requestId else: $now().toTime().toUnix() & "_" & $rand(1000)
   
   result = McpRequestContext(
     server: cast[pointer](server),
+    transport: transport,
     requestId: id,
     startTime: now(),
     cancelled: false,
@@ -338,7 +339,7 @@ template dispatch*[T, U, V, W](server: McpServer, lock: Lock, contextAwareHandle
     else:
       raise newException(ValueError, handlerName & " not found: " & key)
 
-  let requestCtx = if ctx != nil: ctx else: newMcpRequestContextWithServer(server)
+  let requestCtx = if ctx != nil: ctx else: newMcpRequestContextWithServer(server, McpTransport())
   if server.enableContextLogging:
     requestCtx.logMessage("info", "Executing " & handlerName & ": " & key)
 
@@ -369,7 +370,7 @@ proc handleToolsCall*(server: McpServer, params: JsonNode, ctx: McpRequestContex
     else:
       raise newException(ValueError, "Tool not found: " & toolName)
 
-  let requestCtx = if ctx != nil: ctx else: newMcpRequestContextWithServer(server)
+  let requestCtx = if ctx != nil: ctx else: newMcpRequestContextWithServer(server, McpTransport())
   if server.enableContextLogging:
     requestCtx.logMessage("info", "Executing Tool: " & toolName)
 
@@ -427,7 +428,7 @@ proc handleResourcesRead*(server: McpServer, params: JsonNode, ctx: McpRequestCo
   
   # If no direct handler found, try resource templates
   if not hasContextHandler and not hasRegularHandler:
-    let requestCtx = if ctx != nil: ctx else: newMcpRequestContextWithServer(server)
+    let requestCtx = if ctx != nil: ctx else: newMcpRequestContextWithServer(server, McpTransport())
     let templateResult = server.resourceTemplates.handleTemplateRequestWithContext(requestCtx, uri)
     if templateResult.isSome:
       # Create response manually to avoid GC safety issues
@@ -470,7 +471,7 @@ proc handleResourcesRead*(server: McpServer, params: JsonNode, ctx: McpRequestCo
       raise newException(ValueError, "Resource not found: " & uri)
   
   try:
-    let requestCtx = if ctx != nil: ctx else: newMcpRequestContextWithServer(server)
+    let requestCtx = if ctx != nil: ctx else: newMcpRequestContextWithServer(server, McpTransport())
     
     if server.enableContextLogging:
       requestCtx.logMessage("info", "Accessing resource: " & uri)
@@ -590,6 +591,74 @@ proc handleRequest*(server: McpServer, request: JsonRpcRequest): JsonRpcResponse
   let id = request.id.get
   let requestId = if id.kind == jridString: id.str else: $id.num
   let ctx = newMcpRequestContext(requestId)
+  
+  try:
+    # Context is available but not automatically registered to avoid GC issues
+    
+    # Process middleware
+    let processedRequest = server.processMiddleware(ctx, request)
+    
+    if processedRequest.`method` != "initialize" and not server.initialized:
+      let error = newMcpStructuredError(McpServerNotInitialized, melError,
+        "Server must be initialized before calling " & processedRequest.`method`, requestId = ctx.requestId)
+      result = createStructuredErrorResponse(id, error)
+      return
+    
+    # Check for cancellation
+    ctx.ensureNotCancelled()
+    
+    let res = case processedRequest.`method`:
+      of "initialize":
+        server.handleInitialize(processedRequest.params.get(newJObject()))
+      of "tools/list":
+        server.handleToolsList()
+      of "tools/call":
+        server.handleToolsCall(processedRequest.params.get(newJObject()), ctx)
+      of "resources/list":
+        server.handleResourcesList()
+      of "resources/read":
+        server.handleResourcesRead(processedRequest.params.get(newJObject()), ctx)
+      of "prompts/list":
+        server.handlePromptsList()
+      of "prompts/get":
+        server.handlePromptsGet(processedRequest.params.get(newJObject()), ctx)
+      of "ping":
+        server.handlePing()
+      else:
+        let error = newMcpStructuredError(MethodNotFound, melError,
+          "Method not found: " & processedRequest.`method`, requestId = ctx.requestId)
+        result = createStructuredErrorResponse(id, error)
+        return
+
+    let response = createJsonRpcResponse(id, res)
+    return server.processMiddlewareResponse(ctx, response)
+    
+  except ValueError as e:
+    let error = newMcpStructuredError(InvalidParams, melError, e.msg, requestId = ctx.requestId)
+    return createStructuredErrorResponse(id, error)
+  except JsonParsingError as e:
+    let error = newMcpStructuredError(ParseError, melError, "JSON parsing error: " & e.msg, requestId = ctx.requestId)
+    return createStructuredErrorResponse(id, error)
+  except RequestCancellation:
+    let error = newMcpStructuredError(McpRequestCancelled, melWarning, "Request was cancelled", requestId = ctx.requestId)
+    return createStructuredErrorResponse(id, error)
+  except RequestTimeout:
+    let error = newMcpStructuredError(McpRequestCancelled, melWarning, "Request timed out", requestId = ctx.requestId)
+    return createStructuredErrorResponse(id, error)
+  except Exception as e:
+    let error = newMcpStructuredError(InternalError, melCritical, "Internal error: " & e.msg, requestId = ctx.requestId)
+    return createStructuredErrorResponse(id, error)
+
+proc handleRequest*(server: McpServer, transport: McpTransport, request: JsonRpcRequest): JsonRpcResponse {.gcsafe.} =
+  ## Handle a JSON-RPC request with transport access for notifications/events
+  if request.id.isNone:
+    server.handleNotification(request)
+    result = JsonRpcResponse()
+    return
+  
+  let id = request.id.get
+  let requestId = if id.kind == jridString: id.str else: $id.num
+  let ctx = newMcpRequestContextWithServer(server, transport, requestId)
   
   try:
     # Context is available but not automatically registered to avoid GC issues

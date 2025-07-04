@@ -24,8 +24,8 @@ let server = mcpServer("notifications-demo", "1.0.0"):
           "total": count
         }
         
-        # Transport-specific notification would happen here
-        # transport.sendEvent("notification", eventData)
+        # Send notification through transport-agnostic context method
+        ctx.sendEvent("notification", eventData)
         sleep(500)
       
       return fmt"Sent {count} notifications: '{message}'"
@@ -40,7 +40,7 @@ let server = mcpServer("notifications-demo", "1.0.0"):
       for step in 1..steps:
         sleep(800)
         # Progress event would be sent here in real implementation
-        # transport.sendEvent("progress", %*{"step": step, "total": steps})
+        # ctx.sendEvent("progress", %*{"step": step, "total": steps})
       
       return fmt"Task completed with {steps} steps"
 

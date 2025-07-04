@@ -102,8 +102,11 @@ proc handleJsonRequest(transport: MummyTransport, server: McpServer, request: Re
   if sessionId != "":
     headers["Mcp-Session-Id"] = sessionId
   
-  # Use the existing server's request handler
-  let response = server.handleRequest(jsonRpcRequest)
+  # Use the existing server's request handler with transport access
+  let capabilities = {tcEvents, tcUnicast}
+  let mcpTransport = McpTransport(kind: tkHttp, capabilities: capabilities, httpData: HttpTransportData(
+    port: transport.base.port, host: transport.base.host, authConfig: cast[pointer](addr transport.base.authConfig)))
+  let response = server.handleRequest(mcpTransport, jsonRpcRequest)
   
   # Only send a response if it's not empty (i.e., not a notification)
   if response.id.kind != jridString or response.id.str != "":
@@ -134,8 +137,11 @@ proc handleStreamingRequest(transport: MummyTransport, server: McpServer, reques
   if sessionId != "":
     headers["Mcp-Session-Id"] = sessionId
   
-  # Handle the request
-  let response = server.handleRequest(jsonRpcRequest)
+  # Handle the request with transport access
+  let capabilities = {tcEvents, tcUnicast}
+  let mcpTransport = McpTransport(kind: tkHttp, capabilities: capabilities, httpData: HttpTransportData(
+    port: transport.base.port, host: transport.base.host, authConfig: cast[pointer](addr transport.base.authConfig)))
+  let response = server.handleRequest(mcpTransport, jsonRpcRequest)
   
   # Send response as SSE event if not a notification
   if response.id.kind != jridString or response.id.str != "":

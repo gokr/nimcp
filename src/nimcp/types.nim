@@ -195,6 +195,7 @@ type
   McpRequestContext* = ref object
     ## Request context providing access to server state and utilities
     server*: pointer  # Will be cast to McpServer when needed
+    transport*: McpTransport  # Direct transport access for events/notifications
     requestId*: string
     startTime*: DateTime
     cancelled*: bool
