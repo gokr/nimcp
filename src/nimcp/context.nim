@@ -1,7 +1,7 @@
 ## Request context implementation for NimCP
 ## Provides request context, progress tracking, cancellation, and structured error handling
 
-import json, tables, options, times, strutils, locks, random
+import json, tables, options, times, locks, random
 import types
 
 type
@@ -30,9 +30,7 @@ proc newMcpRequestContext*(requestId: string = ""): McpRequestContext =
     requestId: id,
     startTime: now(),
     cancelled: false,
-    metadata: initTable[string, JsonNode](),
-    progressCallback: nil,
-    logCallback: nil
+    metadata: initTable[string, JsonNode]()
   )
 
 
@@ -61,18 +59,8 @@ proc cancelRequest*(requestId: string): bool =
     return true
   return false
 
-proc reportProgress*(ctx: McpRequestContext, message: string, progress: float) =
-  ## Report progress for the current request (0.0 to 1.0)
-  if ctx.progressCallback != nil:
-    ctx.progressCallback(message, progress)
 
-proc logMessage*(ctx: McpRequestContext, level: string, message: string) =
-  ## Log a message for the current request
-  if ctx.logCallback != nil:
-    ctx.logCallback(level, message)
-  else:
-    # Default logging to stdout
-    echo "[" & level.toUpperAscii() & "] " & ctx.requestId & ": " & message
+
 
 proc sendEvent*(ctx: McpRequestContext, eventType: string, data: JsonNode, target: string = "") =
   ## Send an event through the transport (transport-agnostic)
@@ -182,22 +170,7 @@ template withRequestContext*(requestId: string, body: untyped): untyped =
   finally:
     unregisterContext(ctx.requestId)
 
-# Progress tracking utilities
-proc createProgressCallback*(onProgress: proc(message: string, progress: float) {.gcsafe.}): proc(message: string, progress: float) {.gcsafe.} =
-  ## Create a thread-safe progress callback
-  return proc(message: string, progress: float) {.gcsafe.} =
-    try:
-      onProgress(message, progress)
-    except:
-      discard  # Ignore callback errors
 
-proc createLogCallback*(onLog: proc(level: string, message: string) {.gcsafe.}): proc(level: string, message: string) {.gcsafe.} =
-  ## Create a thread-safe log callback
-  return proc(level: string, message: string) {.gcsafe.} =
-    try:
-      onLog(level, message)
-    except:
-      discard  # Ignore callback errors
 
 # Timeout management
 proc setDefaultTimeout*(timeoutMs: int) =

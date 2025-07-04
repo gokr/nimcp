@@ -199,15 +199,8 @@ type
     requestId*: string
     startTime*: DateTime
     cancelled*: bool
-    progressCallback*: proc(message: string, progress: float) {.gcsafe.}
-    logCallback*: proc(level: string, message: string) {.gcsafe.}
     metadata*: Table[string, JsonNode]
   
-  McpProgressInfo* = object
-    ## Progress tracking information
-    message*: string
-    progress*: float  # 0.0 to 1.0
-    timestamp*: DateTime
   
   # Enhanced error types with context
   McpErrorLevel* = enum
@@ -251,40 +244,18 @@ type
     tkWebSocket = "websocket" ## WebSocket transport  
     tkSSE = "sse"             ## Server-Sent Events transport
   
-  # Forward declarations for transport data
-  HttpTransportData* = object
-    port*: int
-    host*: string
-    authConfig*: pointer  # AuthConfig
-    allowedOrigins*: seq[string]
-    connections*: pointer  # Table[string, Request]
-  
-  WebSocketTransportData* = object
-    port*: int
-    host*: string
-    authConfig*: pointer  # AuthConfig
-    connectionPool*: pointer  # ConnectionPool[WebSocketConnection]
-  
-  SseTransportData* = object
-    port*: int
-    host*: string
-    authConfig*: pointer  # AuthConfig
-    connectionPool*: pointer  # ConnectionPool[MummySseConnection]
-    sseEndpoint*: string
-    messageEndpoint*: string
-  
   McpTransport* = object
-    ## Union type with embedded transport data (no inheritance or pointers needed)
+    ## Union type with actual transport instance references
     capabilities*: McpTransportCapabilities
     case kind*: TransportKind
     of tkNone, tkStdio:
       discard  # No additional data needed
     of tkHttp:
-      httpData*: HttpTransportData
+      httpTransport*: pointer  # Points to MummyTransport instance
     of tkWebSocket:
-      wsData*: WebSocketTransportData
+      wsTransport*: pointer    # Points to WebSocketTransport instance
     of tkSSE:
-      sseData*: SseTransportData
+      sseTransport*: pointer   # Points to SseTransport instance
     
 # Polymorphic transport procedures using case-based dispatch
 proc broadcastMessage*(transport: var McpTransport, jsonMessage: JsonNode) {.gcsafe.} =
@@ -311,6 +282,8 @@ proc broadcastMessage*(transport: var McpTransport, jsonMessage: JsonNode) {.gcs
 
 proc sendEvent*(transport: var McpTransport, eventType: string, data: JsonNode, target: string = "") {.gcsafe.} =
   ## Send custom event based on transport type
+  ## Note: This is a stub implementation. Real event sending should be handled
+  ## by the actual transport implementation that has access to connection pools.
   case transport.kind:
   of tkNone, tkStdio:
     discard  # No events for stdio transport
@@ -318,21 +291,9 @@ proc sendEvent*(transport: var McpTransport, eventType: string, data: JsonNode, 
     # HTTP transport: no persistent connections, events not applicable 
     # HTTP is request-response based
     discard
-  of tkWebSocket:
-    # WebSocket transport events
-    if transport.wsData.connectionPool != nil:
-      # WebSocket events are now handled through the connected transport instance
-      let eventMessage = %*{
-        "type": eventType,
-        "data": data
-      }
-      echo fmt"Sending WebSocket event '{eventType}' to all connections: {$eventMessage}"
-  of tkSSE:
-    # SSE transport events
-    if transport.sseData.connectionPool != nil:
-      # SSE events are now handled through the connected transport instance
-      echo fmt"Sending SSE event '{eventType}' to all connections: {$data}"
-
+  of tkWebSocket, tkSSE:
+    # Placeholder - actual transport implementations will override this behavior
+    echo fmt"Event '{eventType}' would be sent via {transport.kind}: {$data}"
 
 # Middleware types
 type

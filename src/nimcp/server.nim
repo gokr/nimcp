@@ -75,9 +75,7 @@ proc newMcpRequestContextWithServer*(server: McpServer, transport: McpTransport,
     requestId: id,
     startTime: now(),
     cancelled: false,
-    metadata: initTable[string, JsonNode](),
-    progressCallback: nil,
-    logCallback: nil
+    metadata: initTable[string, JsonNode]()
   )
 
 # Context helper methods
@@ -87,6 +85,60 @@ proc getServer*(ctx: McpRequestContext): McpServer =
     return cast[McpServer](ctx.server)
   else:
     return nil
+
+# Logger delegation methods for McpRequestContext
+proc getServerLogger*(ctx: McpRequestContext): Logger {.gcsafe.} =
+  ## Get the server's logger instance
+  let server = ctx.getServer()
+  if server != nil:
+    return server.logger
+  else:
+    {.cast(gcsafe).}:
+      return getGlobalLogger()
+
+proc log*(ctx: McpRequestContext, level: LogLevel, message: string, 
+         component: Option[string] = none(string),
+         context: Table[string, JsonNode] = initTable[string, JsonNode]()) {.gcsafe.} =
+  ## Log a message with the specified level through the server's logger
+  var logContext = context
+  logContext["requestId"] = %ctx.requestId
+  ctx.getServerLogger().log(level, message, component, some(ctx.requestId), logContext)
+
+proc trace*(ctx: McpRequestContext, message: string, 
+           component: Option[string] = none(string),
+           context: Table[string, JsonNode] = initTable[string, JsonNode]()) {.gcsafe.} =
+  ## Log a trace message
+  ctx.log(llTrace, message, component, context)
+
+proc debug*(ctx: McpRequestContext, message: string, 
+           component: Option[string] = none(string),
+           context: Table[string, JsonNode] = initTable[string, JsonNode]()) {.gcsafe.} =
+  ## Log a debug message
+  ctx.log(llDebug, message, component, context)
+
+proc info*(ctx: McpRequestContext, message: string, 
+          component: Option[string] = none(string),
+          context: Table[string, JsonNode] = initTable[string, JsonNode]()) {.gcsafe.} =
+  ## Log an info message
+  ctx.log(llInfo, message, component, context)
+
+proc warn*(ctx: McpRequestContext, message: string, 
+          component: Option[string] = none(string),
+          context: Table[string, JsonNode] = initTable[string, JsonNode]()) {.gcsafe.} =
+  ## Log a warning message
+  ctx.log(llWarn, message, component, context)
+
+proc error*(ctx: McpRequestContext, message: string, 
+           component: Option[string] = none(string),
+           context: Table[string, JsonNode] = initTable[string, JsonNode]()) {.gcsafe.} =
+  ## Log an error message
+  ctx.log(llError, message, component, context)
+
+proc fatal*(ctx: McpRequestContext, message: string, 
+           component: Option[string] = none(string),
+           context: Table[string, JsonNode] = initTable[string, JsonNode]()) {.gcsafe.} =
+  ## Log a fatal message
+  ctx.log(llFatal, message, component, context)
 
 # Custom data storage and retrieval methods
 proc setCustomData*[T](server: McpServer, key: string, data: T) =
@@ -341,7 +393,7 @@ template dispatch*[T, U, V, W](server: McpServer, lock: Lock, contextAwareHandle
 
   let requestCtx = if ctx != nil: ctx else: newMcpRequestContextWithServer(server, McpTransport())
   if server.enableContextLogging:
-    requestCtx.logMessage("info", "Executing " & handlerName & ": " & key)
+    requestCtx.info("Executing " & handlerName & ": " & key)
 
   if hasContextHandler:
     contextHandler(requestCtx, extraArgs, args)
@@ -372,7 +424,7 @@ proc handleToolsCall*(server: McpServer, params: JsonNode, ctx: McpRequestContex
 
   let requestCtx = if ctx != nil: ctx else: newMcpRequestContextWithServer(server, McpTransport())
   if server.enableContextLogging:
-    requestCtx.logMessage("info", "Executing Tool: " & toolName)
+    requestCtx.info("Executing Tool: " & toolName)
 
   let res = if hasContextHandler:
     contextHandler(requestCtx, args)
@@ -474,7 +526,7 @@ proc handleResourcesRead*(server: McpServer, params: JsonNode, ctx: McpRequestCo
     let requestCtx = if ctx != nil: ctx else: newMcpRequestContextWithServer(server, McpTransport())
     
     if server.enableContextLogging:
-      requestCtx.logMessage("info", "Accessing resource: " & uri)
+      requestCtx.info("Accessing resource: " & uri)
     
     let res = if hasContextHandler:
       contextHandler(requestCtx, uri)
@@ -566,7 +618,7 @@ proc processMiddleware(server: McpServer, ctx: McpRequestContext, request: JsonR
       try:
         processedRequest = middleware.beforeRequest(ctx, processedRequest)
       except Exception as e:
-        ctx.logMessage("warning", "Middleware '" & middleware.name & "' failed: " & e.msg)
+        ctx.warn("Middleware '" & middleware.name & "' failed: " & e.msg)
   return processedRequest
 
 proc processMiddlewareResponse(server: McpServer, ctx: McpRequestContext, response: JsonRpcResponse): JsonRpcResponse =
@@ -579,7 +631,7 @@ proc processMiddlewareResponse(server: McpServer, ctx: McpRequestContext, respon
       try:
         processedResponse = middleware.afterResponse(ctx, processedResponse)
       except Exception as e:
-        ctx.logMessage("warning", "Middleware '" & middleware.name & "' failed: " & e.msg)
+        ctx.warn("Middleware '" & middleware.name & "' failed: " & e.msg)
   return processedResponse
 
 proc handleRequest*(server: McpServer, request: JsonRpcRequest): JsonRpcResponse {.gcsafe.} =
