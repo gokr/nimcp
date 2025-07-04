@@ -301,6 +301,32 @@ proc handlePromptsGet*(composed: ComposedServer, params: JsonNode, ctx: McpReque
   # Call server's method directly - much more efficient than JSON-RPC overhead
   return server.handlePromptsGet(newParams, ctx)
 
+proc buildCapabilities*(composed: ComposedServer): McpCapabilities =
+  ## Build capabilities by aggregating from all mounted servers
+  result = McpCapabilities()
+  
+  # Check if any mounted server has tools
+  var hasTools = false
+  var hasResources = false
+  var hasPrompts = false
+  
+  for mountPoint in composed.mountPoints:
+    let server = mountPoint.server
+    if server.getRegisteredToolNames().len > 0:
+      hasTools = true
+    if server.getRegisteredResourceUris().len > 0:
+      hasResources = true
+    if server.getRegisteredPromptNames().len > 0:
+      hasPrompts = true
+  
+  # Set capabilities based on what we found
+  if hasTools:
+    result.tools = some(McpToolsCapability())
+  if hasResources:
+    result.resources = some(McpResourcesCapability())
+  if hasPrompts:
+    result.prompts = some(McpPromptsCapability())
+
 proc handleRequest*(composed: ComposedServer, request: JsonRpcRequest): JsonRpcResponse =
   ## Main request handler for ComposedServer that routes requests appropriately
   try:
@@ -320,15 +346,10 @@ proc handleRequest*(composed: ComposedServer, request: JsonRpcRequest): JsonRpcR
           if not mountPoint.server.initialized:
             raise newException(ValueError, "Failed to initialize mounted server: " & mountPoint.path)
       
-      # Return standard initialize response
-      %*{
-        "protocolVersion": "2024-11-05",
-        "serverInfo": {
-          "name": composed.name,
-          "version": composed.version
-        },
-        "capabilities": {}
-      }
+      # Return standard initialize response with aggregated capabilities
+      let serverInfo = McpServerInfo(name: composed.name, version: composed.version)
+      let capabilities = composed.buildCapabilities()
+      createInitializeResponseJson(serverInfo, capabilities)
     of "tools/list":
       composed.handleToolsList()
     of "tools/call":
@@ -341,6 +362,8 @@ proc handleRequest*(composed: ComposedServer, request: JsonRpcRequest): JsonRpcR
       composed.handlePromptsList()
     of "prompts/get":
       composed.handlePromptsGet(request.params.get(newJObject()), requestCtx)
+    of "ping":
+      newJObject()
     else:
       raise newException(ValueError, "Method not found: " & request.`method`)
 

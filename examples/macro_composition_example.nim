@@ -86,6 +86,18 @@ let stringServer = mcpServer("string-service", "1.0.0"):
       ## - text: Text to analyze
       let words = text.split()
       return fmt"Word count: {words.len}"
+  
+  mcpTool:
+    proc countLettersInWord(word: string, letter: string): string =
+      ## Count letters in a word
+      ## - word: Word to count occurrences of a letter in
+      ## - letter: Letter to count in the word
+      var count = 0
+      for c in word:
+        if c == letter[0]:
+          count += 1
+      return fmt"There are {count} '{letter}'s in '{word}'."
+  
 
 #  This example demonstrates:
 # - Creating multiple servers using the macro system

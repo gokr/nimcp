@@ -496,6 +496,10 @@ proc handlePromptsList*(server: McpServer): JsonNode {.gcsafe.} =
       prompts.add(prompt)
   return createPromptsListResponseJson(prompts)
 
+proc handlePing*(server: McpServer): JsonNode {.gcsafe.} =
+  ## Handle ping requests - returns empty object per MCP spec
+  return newJObject()
+
 proc handlePromptsGet*(server: McpServer, params: JsonNode, ctx: McpRequestContext = nil): JsonNode {.gcsafe.} =
   let promptName = requireStringField(params, "name")
   if promptName.len == 0:
@@ -617,6 +621,8 @@ proc handleRequest*(server: McpServer, request: JsonRpcRequest): JsonRpcResponse
         server.handlePromptsList()
       of "prompts/get":
         server.handlePromptsGet(processedRequest.params.get(newJObject()), ctx)
+      of "ping":
+        server.handlePing()
       else:
         let error = newMcpStructuredError(MethodNotFound, melError,
           "Method not found: " & processedRequest.`method`, requestId = ctx.requestId)
