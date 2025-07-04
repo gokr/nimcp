@@ -11,11 +11,7 @@ let server = mcpServer("notifications-demo", "1.0.0"):
       ## Send a notification event to connected clients
       ## - message: Message to broadcast
       ## - count: Number of notifications to send
-      
-      let server = ctx.getServer()
-      # In a real context-aware implementation, transport would be accessible
-      # This is a simplified example showing the pattern
-      
+ 
       for i in 1..count:
         let eventData = %*{
           "message": fmt"{message} (#{i}/{count})",
@@ -24,7 +20,7 @@ let server = mcpServer("notifications-demo", "1.0.0"):
           "total": count
         }
         
-        # Send notification through transport-agnostic context method
+        # Send notification to client via ctx
         ctx.sendEvent("notification", eventData)
         sleep(500)
       
