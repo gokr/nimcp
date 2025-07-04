@@ -33,6 +33,11 @@ This directory contains comprehensive examples demonstrating NimCP's full featur
 ### Testing HTTP Examples
 For HTTP examples, test with curl:
 ```bash
+# Initialize
+curl -X POST http://localhost:8080 \
+  -H "Content-Type: application/json" \
+  -d '{"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {"protocolVersion": "2024-11-05", "capabilities": {"tools": {}}}}'
+
 # Basic tool call
 curl -X POST http://localhost:8080 \
   -H "Content-Type: application/json" \
