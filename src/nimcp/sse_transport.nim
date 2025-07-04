@@ -30,16 +30,13 @@
 ## let server = newMcpServer("MyServer", "1.0.0")
 ## # Add tools and resources to server...
 ##
-## # Run with default settings
-## server.runSse()
-##
 ## # Or with custom configuration
 ## let authConfig = newAuthConfig(enabled = true, bearerToken = "secret")
 ## server.runSse(port = 8080, host = "0.0.0.0", authConfig = authConfig)
 ##
 ## # Or with custom endpoints
-## let transport = newSseTransport(server, sseEndpoint = "/events", messageEndpoint = "/rpc")
-## transport.start()
+## let transport = newSseTransport(port = 8080, sseEndpoint = "/events", messageEndpoint = "/rpc")
+## transport.serve(server)
 ## ```
 ##
 ## The transport automatically handles:
@@ -82,14 +79,13 @@ proc newSseTransport*(port: int = 8080, host: string = "127.0.0.1",
   )
   return transport
 
-
-
 proc validateSseAuth(transport: SseTransport, request: Request): tuple[valid: bool, errorMsg: string] =
   ## Validate SSE authentication using shared auth module
   let (valid, _, errorMsg) = transport.base.validateAuthentication(request)
   if not valid:
     return (false, errorMsg)
   return (true, "")
+
 proc sendEvent(connection: MummySseConnection, event: string, data: string, id: string = "") =
   ## Send an SSE event to a connection (renamed from sendEvent for unified API)
   let sseEvent = SSEEvent(

@@ -672,13 +672,3 @@ proc addProperty*(schema: JsonSchemaRef, name: string, propSchema: JsonSchemaRef
     schema.properties[name] = propSchema
     if required:
       schema.required.add(name)
-
-
-
-# Context utility functions are now in context.nim module to avoid duplication
-
-# Structured error utilities are now in context.nim module to avoid duplication
-
-# Convenience functions for content creation are in protocol.nim to avoid duplication
-
-# Server composition types moved to server.nim to avoid circular dependency
