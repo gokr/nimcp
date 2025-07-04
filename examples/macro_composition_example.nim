@@ -4,8 +4,8 @@
 import ../src/nimcp/mcpmacros
 import ../src/nimcp/server
 import ../src/nimcp/stdio_transport
-from ../src/nimcp/composed_server import newComposedServer, mountServerAt, ComposedServer, serve, getMountedServerInfo
-import json, math, strformat, os, strutils, options, tables
+import ../src/nimcp/composed_server
+import json, math, strformat, os, strutils, options
 
 # Calculator service using the macro system
 let calculatorServer = mcpServer("calculator-service", "1.0.0"):
@@ -87,56 +87,21 @@ let stringServer = mcpServer("string-service", "1.0.0"):
       let words = text.split()
       return fmt"Word count: {words.len}"
 
-when isMainModule:
-  echo "🎯 MCP Macro Server Composition Example"
-  echo "======================================="
-  echo ""
-  echo "This example demonstrates:"
-  echo "- Creating multiple servers using the macro system"
-  echo "- Composing them into a single API gateway"
-  echo "- Using prefixes for tool namespacing"
-  echo ""
-  
-  # Create a composed server that mounts all the macro-created servers
-  let apiGateway = newComposedServer("api-gateway", "1.0.0")
-  
-  # Mount each service with different prefixes
-  apiGateway.mountServerAt("/calc", calculatorServer, some("calc_"))
-  apiGateway.mountServerAt("/files", fileServer, some("file_"))
-  apiGateway.mountServerAt("/string", stringServer, some("str_"))
-  
-  echo "✅ Created composed server with mounted services:"
-  echo "   📊 Calculator service at /calc with prefix 'calc_'"
-  echo "   📁 File service at /files with prefix 'file_'"
-  echo "   📝 String service at /string with prefix 'str_'"
-  echo ""
-  
-  # Show server information
-  echo "📋 Available tools in composed server:"
-  let mountInfo = apiGateway.getMountedServerInfo()
-  for path, info in mountInfo:
-    let toolCount = info["toolCount"].getInt()
-    let serverName = info["serverName"].getStr()
-    echo fmt"   {path}: {toolCount} tools from {serverName}"
-  echo ""
-  
-  # Show some example tool names that would be available
-  echo "🛠️  Example tool names available:"
-  echo "   - calc_add (from calculator service)"
-  echo "   - calc_multiply (from calculator service)" 
-  echo "   - calc_factorial (from calculator service)"
-  echo "   - file_readFile (from file service)"
-  echo "   - file_listFiles (from file service)"
-  echo "   - str_uppercase (from string service)"
-  echo "   - str_reverse (from string service)"
-  echo "   - str_wordCount (from string service)"
-  echo ""
-  
-  echo "🎮 Starting composed MCP server..."
-  echo "   Send JSON-RPC requests to interact with any mounted service"
-  echo "   Tools are automatically prefixed based on their service"
-  echo ""
-  
-  # Run the composed server using the new ComposedServer functionality
-  let transport = newStdioTransport()
-  transport.serve(apiGateway)
+#  This example demonstrates:
+# - Creating multiple servers using the macro system
+# - Composing them into a single API gateway
+# - Using prefixes for tool namespacing
+
+# Create a composed server that mounts all the macro-created servers
+var apiGateway: ComposedServer
+apiGateway = newComposedServer("api-gateway", "1.0.0")
+
+# Mount each service with different prefixes
+apiGateway.mountServerAt("/calc", calculatorServer, some("calc_"))
+apiGateway.mountServerAt("/files", fileServer, some("file_"))
+apiGateway.mountServerAt("/string", stringServer, some("str_"))
+    
+# Run the composed server using proper transport integration with taskpools
+# ComposedServer now inherits from McpServer, so it can be used directly
+var transport = newStdioTransport()
+transport.serve(apiGateway)

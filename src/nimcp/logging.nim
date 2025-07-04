@@ -150,7 +150,7 @@ proc fatal*(logger: Logger, message: string, component: Option[string] = none(st
 # Built-in log handlers
 
 proc consoleHandler*(msg: LogMessage) =
-  ## Simple console log handler
+  ## Simple console log handler (outputs to stdout)
   let timestamp = msg.timestamp.format("yyyy-MM-dd HH:mm:ss")
   let levelStr = ($msg.level).toUpper()
   var line = "[$#] [$#] $#" % [timestamp, levelStr, msg.message]
@@ -162,6 +162,20 @@ proc consoleHandler*(msg: LogMessage) =
     line.add(" [req:" & msg.requestId.get() & "]")
   
   echo line
+
+proc stderrHandler*(msg: LogMessage) =
+  ## Console log handler that outputs to stderr (for stdio transport)
+  let timestamp = msg.timestamp.format("yyyy-MM-dd HH:mm:ss")
+  let levelStr = ($msg.level).toUpper()
+  var line = "[$#] [$#] $#" % [timestamp, levelStr, msg.message]
+  
+  if msg.component.isSome:
+    line = "[$#] [$#] [$#] $#" % [timestamp, levelStr, msg.component.get(), msg.message]
+  
+  if msg.requestId.isSome:
+    line.add(" [req:" & msg.requestId.get() & "]")
+  
+  stderr.writeLine(line)
 
 proc jsonHandler*(msg: LogMessage) =
   ## JSON structured log handler
@@ -317,4 +331,10 @@ proc setupJSONLogging*(level: LogLevel = llInfo) =
   ## Set up JSON structured logging
   let logger = newLogger(level)
   logger.addHandler(jsonHandler)
+  setGlobalLogger(logger)
+
+proc setupStderrLogging*(level: LogLevel = llInfo) =
+  ## Set up stderr console logging (for stdio transport)
+  let logger = newLogger(level)
+  logger.addHandler(stderrHandler)
   setGlobalLogger(logger)

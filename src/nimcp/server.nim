@@ -14,7 +14,7 @@ initLock(resourcesLock)
 initLock(promptsLock)
 
 type
-  McpServer* = ref object
+  McpServer* = ref object of RootObj
     serverInfo*: McpServerInfo
     capabilities*: McpCapabilities
     tools*: Table[string, McpTool]
@@ -310,15 +310,16 @@ proc getServerStats*(server: McpServer): Table[string, JsonNode] =
   result["promptCount"] = %server.getRegisteredPromptNames().len
 
 # Core message handlers (same logic as original server)
-proc handleInitialize(server: McpServer, params: JsonNode): JsonNode {.gcsafe.} =
+proc handleInitialize*(server: McpServer, params: JsonNode): JsonNode {.gcsafe.} =
   server.initialized = true
   return createInitializeResponseJson(server.serverInfo, server.capabilities)
 
-proc handleToolsList(server: McpServer): JsonNode {.gcsafe.} =
+proc handleToolsList*(server: McpServer): JsonNode {.gcsafe.} =
   var tools: seq[McpTool] = @[]
   withLock toolsLock:
     for tool in server.tools.values:
       tools.add(tool)
+  echo "Handling tools/list for McpServer ", tools
   return createToolsListResponseJson(tools)
 
 template dispatch*[T, U, V, W](server: McpServer, lock: Lock, contextAwareHandlers: Table[string, T], regularHandlers: Table[string, U], key: string, ctx: McpRequestContext, args: V, handlerName: string, extraArgs: W): auto =
@@ -399,7 +400,7 @@ proc handleToolsCall*(server: McpServer, params: JsonNode, ctx: McpRequestContex
     responseJson["content"].add(contentJson)
   return responseJson
 
-proc handleResourcesList(server: McpServer): JsonNode {.gcsafe.} =
+proc handleResourcesList*(server: McpServer): JsonNode {.gcsafe.} =
   var resources: seq[McpResource] = @[]
   withLock resourcesLock:
     for resource in server.resources.values:
@@ -488,7 +489,7 @@ proc handleResourcesRead*(server: McpServer, params: JsonNode, ctx: McpRequestCo
   except Exception as e:
     raise newException(ValueError, "Resource access failed for '" & uri & "': " & e.msg)
 
-proc handlePromptsList(server: McpServer): JsonNode {.gcsafe.} =
+proc handlePromptsList*(server: McpServer): JsonNode {.gcsafe.} =
   var prompts: seq[McpPrompt] = @[]
   withLock promptsLock:
     for prompt in server.prompts.values:
@@ -640,8 +641,4 @@ proc handleRequest*(server: McpServer, request: JsonRpcRequest): JsonRpcResponse
   except Exception as e:
     let error = newMcpStructuredError(InternalError, melCritical, "Internal error: " & e.msg, requestId = ctx.requestId)
     return createStructuredErrorResponse(id, error)
-
-
-
-
 
