@@ -35,8 +35,7 @@ let server = mcpServer("streaming-example", "1.0.0"):
       # Simulate work with progress updates
       for i in 1..duration:
         sleep(1000)
-        # In real implementation, progress events would be sent via transport
-        # ctx.sendProgress(i, duration, fmt"Step {i} of {duration}")
+        ctx.reportProgress(fmt"Step {i} of {duration}", (duration / i))
       
       return fmt"Long task completed in {duration} seconds"
 
