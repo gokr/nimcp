@@ -4,7 +4,7 @@
 ## into a single server that can route requests to the appropriate mounted servers.
 
 import json, tables, options, strutils
-import types, protocol, context, server, stdio_transport
+import types, protocol, context, server, stdio_transport, logging
 
 type
   MountPoint* = object
@@ -20,6 +20,7 @@ type
     version*: string
     mountPoints*: seq[MountPoint]
     pathMappings*: Table[string, MountPoint]
+    logger*: Logger
     initialized*: bool
 
   ServerNamespace* = object
@@ -46,6 +47,15 @@ proc newComposedServer*(name: string, version: string): ComposedServer =
   result.initialized = false
   result.mountPoints = @[]
   result.pathMappings = initTable[string, MountPoint]()
+
+  # Initialize logging with server-specific component name
+  result.logger = newLogger(llInfo)
+  result.logger.setComponent("mcp-composed-server-" & name)
+  result.logger.setupChroniclesLogging()
+  
+  # Log server initialization
+  result.logger.info("MCP composed server initialized", 
+    context = {"name": %name, "version": %version}.toTable)
 
 # Server mounting and unmounting
 proc mountServer*(composed: ComposedServer, mountPoint: MountPoint) =
@@ -376,48 +386,12 @@ proc handleRequest*(composed: ComposedServer, request: JsonRpcRequest): JsonRpcR
     let requestId = if request.id.isSome: request.id.get() else: JsonRpcId(kind: jridString, str: "")
     return createInternalError(requestId, e.msg)
 
-# Transport integration for ComposedServer
-proc serve*(transport: StdioTransport, server: ComposedServer) =
-  ## Serve the ComposedServer with stdio transport - simplified without inheritance
-  echo "[INFO] Stdio transport started - MCP compliant initialization - logging redirected to stderr"
-  
-  while true:
-    try:
-      let line = stdin.readLine()
-      if line.len == 0:
-        continue
-      
-      # Parse and handle the request directly (no taskpools to avoid segfault)
-      var requestId: JsonRpcId = JsonRpcId(kind: jridString, str: "")
-      try:
-        let request = parseJsonRpcMessage(line)
-        if request.id.isSome():
-          requestId = request.id.get
-        if not request.id.isSome():
-          # Handle notification (no response needed)
-          discard
-        else:
-          let response = server.handleRequest(request)
-          echo $response
-      except Exception as e:
-        let errorResponse = createJsonRpcError(requestId, ParseError, "Parse error: " & e.msg)
-        echo $(%errorResponse)
-        
-    except EOFError:
-      break
-    except Exception:
-      break
-
-# McpServer interface compatibility methods
 proc handleNotification*(composed: ComposedServer, request: JsonRpcRequest) {.gcsafe.} =
   ## Handle notification - ComposedServer doesn't need special notification handling
-  # Notifications can be handled by the base McpServer behavior or ignored
   discard
 
 proc shutdown*(composed: ComposedServer) =
   ## Shutdown composed server and all mounted servers
   for mountPoint in composed.mountPoints:
     mountPoint.server.shutdown()
-  # Clean up ComposedServer resources
-  composed.initialized = false
 

@@ -25,4 +25,5 @@ let slowTool = McpTool(
 )
 
 server.registerTool(slowTool, slowTaskHandler)
-server.runStdio()
+let transport = newStdioTransport()
+transport.serve(server)

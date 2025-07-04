@@ -5,7 +5,7 @@
 
 import json, locks, options, deques
 import taskpools, cpuinfo
-import types, protocol, server, logging
+import types, protocol, server, composed_server, logging
 
 type 
   InitializationState* = enum
@@ -49,7 +49,7 @@ proc isInitializeRequest(requestLine: string): bool =
     discard
   return false
 
-# Request processing task for taskpools - uses global pointer to avoid isolation issues
+# Request processing task for taskpools
 proc processRequestTask[T](transport: ptr StdioTransport, server: ptr T, requestLine: string) {.gcsafe.} =
   var requestId: JsonRpcId = JsonRpcId(kind: jridString, str: "")
   try:
@@ -67,23 +67,43 @@ proc processRequestTask[T](transport: ptr StdioTransport, server: ptr T, request
 
 
 proc processRequestTask(transport: StdioTransport, server: McpServer, line: string) {.gcsafe.} =
+  ## Had to extract this proc to avoid segfaults with taskpools and generics
   transport.taskpool.spawn processRequestTask[McpServer](addr transport, addr server, line)
 
-proc processQueuedRequests[T](transport: StdioTransport, server: T) =
-  ## Process all queued requests after initialization completes
-  while transport.queuedRequests.len > 0:
-    let line = transport.queuedRequests.popFirst()
-    processRequestTask(transport, server, line)
-
 # Main stdio transport serving procedure with MCP protocol compliance
-proc serve*(transport: StdioTransport, server: McpServer) =
+proc serve*[T: ComposedServer | McpServer](transport: StdioTransport, server: T) =
   ## Serve the MCP server with stdio transport ensuring MCP protocol compliance
   ## - Initialize requests are processed synchronously as required by MCP spec
   ## - Other requests are queued until initialization completes, then processed concurrently
   
   # Configure logging to use stderr to avoid interference with MCP protocol on stdout
-  server.logger.handlers = @[]  # Clear existing handlers
-  server.logger.addHandler(stderrHandler)
-  server.logger.info("Stdio transport started - MCP compliant initialization - logging redirected to stderr")
+  server.logger.redirectToStderr()
+  server.logger.info("Stdio transport started")
 
+  while true:
+    try:
+      let line = stdin.readLine()
+      if line.len == 0:
+        continue
+      
+      # Parse and handle the request directly (no taskpools to avoid segfault)
+      var requestId: JsonRpcId = JsonRpcId(kind: jridString, str: "")
+      try:
+        let request = parseJsonRpcMessage(line)
+        if request.id.isSome():
+          requestId = request.id.get
+        if not request.id.isSome():
+          # Handle notification (no response needed)
+          discard
+        else:
+          let response = server.handleRequest(request)
+          echo $response
+      except Exception as e:
+        let errorResponse = createJsonRpcError(requestId, ParseError, "Parse error: " & e.msg)
+        echo $(%errorResponse)
+        
+    except EOFError:
+      break
+    except Exception:
+      break
 

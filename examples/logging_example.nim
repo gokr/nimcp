@@ -144,3 +144,6 @@ when isMainModule:
   echo "🎯 Pluggable Logging example completed!"
   echo "Check 'example.log' file for file logging output."
   echo "This demonstrates flexible logging with multiple handlers and levels."
+
+  let transport = newStdioTransport()
+  transport.serve(server)

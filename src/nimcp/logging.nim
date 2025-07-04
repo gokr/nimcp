@@ -338,3 +338,9 @@ proc setupStderrLogging*(level: LogLevel = llInfo) =
   let logger = newLogger(level)
   logger.addHandler(stderrHandler)
   setGlobalLogger(logger)
+
+proc redirectToStderr*(logger: Logger) =
+  ## Redirect logging to stderr
+  logger.handlers = @[]  # Clear existing handlers
+  logger.addHandler(stderrHandler)
+  logger.info("Logging redirected to stderr")

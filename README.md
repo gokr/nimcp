@@ -5,7 +5,7 @@
 
 **NimCP** is a macro-based library for creating [Model Context Protocol (MCP)](https://modelcontextprotocol.io) servers in Nim. It leverages Nim's macro system to provide an incredibly easy-to-use API for building MCP servers that integrate seamlessly with LLM applications.
 
-**NOTE: 99.9% of this library was written using Claude Code "vibe coding"**
+**NOTE: 99.9% of this library was written using Claude Code!**
 
 ## Features
 
@@ -17,11 +17,12 @@
 - **Request Context System** - Progress tracking, cancellation, and request lifecycle management
 - **Structured Error Handling** - Enhanced error types with context propagation and categorization
 - **Resource URI Templates** - Dynamic URI patterns with parameter extraction (`/users/{id}`)
-- **Server Composition** - Compose multiple MCP servers into a single interface with prefixes and routing for API gateways
+- **Server Composition** - Compose multiple MCP servers into a single interface with prefixes and routing
 - **Pluggable Logging** - Flexible logging system with multiple handlers, levels, and structured output
 - **Middleware Pipeline** - Request/response transformation and processing hooks
 - **Fluent API** - Method chaining patterns for elegant server configuration
-- **High Performance** - Mummy based HTTP and WebSockets implementation and modern taskpools for stdio transport
+- **High Performance** - Mummy based HTTP and WebSockets implementation
+- **Concurrent Processing** - Uses the new taskpools library for stdio transport
 - **Comprehensive Testing** - Full test suite covering all features and edge cases
 - **Minimal Dependencies** - Uses only essential, well-maintained packages
 
@@ -70,29 +71,20 @@ That's it! Your MCP server is ready to run.
 
 ### Tools
 
-Tools are functions that LLM applications can call. Define them with the `mcpTool` macro:
+Tools are functions that LLM applications can call. Define them with the `mcpTool` macro that plucks out the tool name, description, and JSON schema from your **procedure signature and doc comments**:
 
 ```nim
 mcpTool:
   proc calculate(expression: string): string =
     ## Perform mathematical calculations
+    ## - expression: Mathematical expression to evaluate
     # Your calculation logic here
     return "Result: 42"
 ```
 
 #### Context-Aware vs Regular Tools
 
-NimCP supports **two types of tools**:
-
-**Regular Tools** - Simple functions that only receive arguments:
-```nim
-mcpTool:
-  proc add(a: float, b: float): string =
-    ## Add two numbers together
-    return fmt"Result: {a + b}"
-```
-
-**Context-Aware Tools** - Advanced functions that also receive server context for accessing server state and request information:
+NimCP also supports context aware tools that also receive server context for accessing server state and request information:
 ```nim
 # Context aware tools need to have first parameter being an McpRequestContext
 mcpTool:
@@ -154,7 +146,6 @@ mcpPrompt("code_review", "Code review prompt", @[
     ]
 ```
 
-## Advanced Usage
 
 ### Manual Server Creation
 
@@ -222,13 +213,6 @@ transport.serve(apiGateway)
 # Tools are now available as: calc_add, file_readFile
 ```
 
-**Benefits of Composition**:
-- 🔧 **Modular architecture** - Build focused, single-purpose servers
-- 🏷️ **Namespace isolation** - Avoid tool name conflicts with prefixes  
-- 🔄 **Code reuse** - Mount the same server in multiple gateways
-- 🛡️ **Memory safety** - Uses composition over inheritance for better safety
-- 🎯 **Simple routing** - Flat delegation model, no complex hierarchies
-
 ### Error Handling
 
 NimCP automatically handles JSON-RPC errors, but you can throw exceptions in your handlers:
@@ -244,27 +228,7 @@ mcpTool:
 
 ## Examples
 
-Check out the `examples/` directory for comprehensive examples:
-
-- [`simple_server.nim`](examples/simple_server.nim) - Basic server with echo and time tools (stdio)
-- [`calculator_server.nim`](examples/calculator_server.nim) - Calculator with multiple tools and resources (manual API, stdio)
-- [`macro_calculator.nim`](examples/macro_calculator.nim) - Calculator using macro API with automatic introspection (stdio)
-- [`macro_mummy_calculator.nim`](examples/macro_mummy_calculator.nim) - Calculator using macro API over HTTP transport
-- [`mummy_calculator.nim`](examples/mummy_calculator.nim) - Calculator using manual API over HTTP transport
-- [`authenticated_mummy_calculator.nim`](examples/authenticated_mummy_calculator.nim) - HTTP calculator with Bearer token authentication
-- [`websocket_calculator.nim`](examples/websocket_calculator.nim) - Calculator using macro API over WebSocket transport (real-time)
-- [`authenticated_websocket_calculator.nim`](examples/authenticated_websocket_calculator.nim) - WebSocket calculator with Bearer token authentication
-- [`resource_templates_example.nim`](examples/resource_templates_example.nim) - Dynamic URI patterns with parameter extraction
-- [`macro_composition_example.nim`](examples/macro_composition_example.nim) - Server composition and API gateway patterns
-- [`logging_example.nim`](examples/logging_example.nim) - Pluggable logging system with multiple handlers
-- [`fluent_api_example.nim`](examples/fluent_api_example.nim) - Method chaining and fluent API patterns
-- [`enhanced_calculator.nim`](examples/enhanced_calculator.nim) - Comprehensive example showcasing all features
-- [`sse_notifications_demo.nim`](examples/sse_notifications_demo.nim) - Server-initiated events and real-time notifications with context-aware tools
-- [`sse_notifications_macro.nim`](examples/sse_notifications_macro.nim) - Mixed approach: macro API + manual context-aware registration  
-- [`sse_notifications_full_macro.nim`](examples/sse_notifications_full_macro.nim) - Pure macro API with automatic context detection
-- [`websocket_notifications_demo.nim`](examples/websocket_notifications_demo.nim) - WebSocket notifications using unified transport API
-
-See the [examples README](examples/README.md) for detailed explanations and architecture comparisons.
+Check out the `examples/` directory for comprehensive examples and see the [examples README](examples/README.md) for some more info.
 
 Just from command line you can test and list tools with for example:
 ```bash
@@ -275,10 +239,10 @@ If you are using Claude Code, this is how you can add it as an MCP server:
 
 1. Add the MCP server to Claude Code:
 ```bash
-claude mcp add calculator_server --transport stdio $PWD/examples/calculator_server
+claude mcp add basic_calculator --transport stdio $PWD/examples/basic_calculator
 ```
 
-2. Verify it was added:
+1. Verify it was added:
 
 ```bash
 claude mcp list
