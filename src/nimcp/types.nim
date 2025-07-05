@@ -252,6 +252,7 @@ type
       discard  # No additional data needed
     of tkHttp:
       httpTransport*: pointer  # Points to MummyTransport instance
+      httpSendEvent*: proc(transport: pointer, eventType: string, data: JsonNode, target: string) {.gcsafe.}
     of tkWebSocket:
       wsTransport*: pointer    # Points to WebSocketTransport instance
       wsSendEvent*: proc(transport: pointer, eventType: string, data: JsonNode, target: string) {.gcsafe.}

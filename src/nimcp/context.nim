@@ -70,7 +70,8 @@ proc sendEvent*(ctx: McpRequestContext, eventType: string, data: JsonNode, targe
   of tkNone, tkStdio:
     discard  # No events for stdio transport
   of tkHttp:
-    discard  # HTTP transport has no persistent connections for events
+    if ctx.transport.httpTransport != nil and ctx.transport.httpSendEvent != nil:
+      ctx.transport.httpSendEvent(ctx.transport.httpTransport, eventType, data, target)
   of tkWebSocket:
     if ctx.transport.wsTransport != nil and ctx.transport.wsSendEvent != nil:
       ctx.transport.wsSendEvent(ctx.transport.wsTransport, eventType, data, target)
