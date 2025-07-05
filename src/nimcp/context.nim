@@ -4,6 +4,8 @@
 import json, tables, options, times, locks, random
 import types
 
+# No imports or forward declarations needed - we'll use function pointers from the transport
+
 type
   ContextManager* = ref object
     ## Manages request contexts across the server
@@ -63,8 +65,18 @@ proc cancelRequest*(requestId: string): bool =
 
 
 proc sendEvent*(ctx: McpRequestContext, eventType: string, data: JsonNode, target: string = "") =
-  ## Send an event through the transport (transport-agnostic)
-  sendEvent(ctx.transport, eventType, data, target)
+  ## Send an event through the transport using function pointers
+  case ctx.transport.kind:
+  of tkNone, tkStdio:
+    discard  # No events for stdio transport
+  of tkHttp:
+    discard  # HTTP transport has no persistent connections for events
+  of tkWebSocket:
+    if ctx.transport.wsTransport != nil and ctx.transport.wsSendEvent != nil:
+      ctx.transport.wsSendEvent(ctx.transport.wsTransport, eventType, data, target)
+  of tkSSE:
+    if ctx.transport.sseTransport != nil and ctx.transport.sseSendEvent != nil:
+      ctx.transport.sseSendEvent(ctx.transport.sseTransport, eventType, data, target)
 
 proc broadcastMessage*(ctx: McpRequestContext, jsonMessage: JsonNode) =
   ## Broadcast a message through the transport (transport-agnostic)

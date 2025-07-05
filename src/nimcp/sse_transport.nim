@@ -79,6 +79,14 @@ proc newSseTransport*(port: int = 8080, host: string = "127.0.0.1",
   )
   return transport
 
+# Forward declaration for the event sending function
+proc sendEventToSSEClients(transport: SseTransport, eventType: string, data: JsonNode, target: string = "") {.gcsafe.}
+
+proc sseEventWrapper(transportPtr: pointer, eventType: string, data: JsonNode, target: string = "") {.gcsafe.} =
+  ## Wrapper function for SSE event sending that matches function pointer signature
+  let transport = cast[SseTransport](transportPtr)
+  transport.sendEventToSSEClients(eventType, data, target)
+
 proc validateSseAuth(transport: SseTransport, request: Request): tuple[valid: bool, errorMsg: string] =
   ## Validate SSE authentication using shared auth module
   let (valid, _, errorMsg) = transport.base.validateAuthentication(request)
@@ -178,9 +186,8 @@ proc setupRoutes(transport: SseTransport, server: McpServer) =
       
       # Use the existing server's request handler with transport access
       let capabilities = {tcBroadcast, tcUnicast, tcEvents}  # SSE supports broadcasting and events
-      let mcpTransport = McpTransport(kind: tkSSE, capabilities: capabilities, sseData: SseTransportData(
-        port: transport.base.port, host: transport.base.host, authConfig: cast[pointer](addr transport.base.authConfig),
-        sseEndpoint: transport.sseEndpoint, messageEndpoint: transport.messageEndpoint))
+      let mcpTransport = McpTransport(kind: tkSSE, capabilities: capabilities, 
+        sseTransport: cast[pointer](transport), sseSendEvent: sseEventWrapper)
       let response = server.handleRequest(mcpTransport, jsonRpcRequest)
       
       # Send response back via SSE to all connections
@@ -208,9 +215,25 @@ proc setupRoutes(transport: SseTransport, server: McpServer) =
     request.respond(200, headers = headers)
   )
 
+proc sendEventToSSEClients(transport: SseTransport, eventType: string, data: JsonNode, target: string = "") {.gcsafe.} =
+  ## Send MCP notification to all SSE clients
+  let notification = %*{
+    "jsonrpc": "2.0",
+    "method": "notifications/message",
+    "params": %*{
+      "type": eventType,
+      "data": data
+    }
+  }
+  
+  # Send to all SSE connections
+  for connection in transport.connectionPool.connections():
+    sendSseMessage(connection, notification)
+
 proc serve*(transport: SseTransport, server: McpServer) =
   ## Serve the SSE transport server
   setupRoutes(transport, server)
+  
   
   transport.base.httpServer = newServer(transport.base.router)
   
@@ -228,6 +251,8 @@ proc serve*(transport: SseTransport, server: McpServer) =
 proc stop*(transport: SseTransport) =
   ## Stop the SSE transport server
   transport.base.stopServer()
+  
+  
   # Close all SSE connections
   for connection in transport.connectionPool.connections():
     try:

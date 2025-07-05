@@ -58,7 +58,7 @@
 ## - Session management via custom headers
 ## - Error formatting according to JSON-RPC 2.0 specification
 
-import mummy, mummy/routers, json, strutils, strformat, options, tables, times
+import mummy, mummy/routers, json, strutils, strformat, options, tables
 import server, types, protocol, auth, cors, http_common
 
 type
@@ -104,8 +104,7 @@ proc handleJsonRequest(transport: MummyTransport, server: McpServer, request: Re
   
   # Use the existing server's request handler with transport access
   let capabilities = {tcEvents, tcUnicast}
-  let mcpTransport = McpTransport(kind: tkHttp, capabilities: capabilities, httpData: HttpTransportData(
-    port: transport.base.port, host: transport.base.host, authConfig: cast[pointer](addr transport.base.authConfig)))
+  let mcpTransport = McpTransport(kind: tkHttp, capabilities: capabilities, httpTransport: cast[pointer](transport))
   let response = server.handleRequest(mcpTransport, jsonRpcRequest)
   
   # Only send a response if it's not empty (i.e., not a notification)
@@ -115,44 +114,27 @@ proc handleJsonRequest(transport: MummyTransport, server: McpServer, request: Re
     # For notifications, just return 204 No Content
     request.respond(204, headers, "")
 
-proc formatSseEvent(eventType: string, data: JsonNode, id: string = ""): string =
-  ## Format data as Server-Sent Event
-  var lines: seq[string] = @[]
-  if id != "":
-    lines.add("id: " & id)
-  if eventType != "":
-    lines.add("event: " & eventType)
-  lines.add("data: " & $data)
-  lines.add("")  # Empty line terminates the event
-  return lines.join("\n")
 
 proc handleStreamingRequest(transport: MummyTransport, server: McpServer, request: Request, jsonRpcRequest: JsonRpcRequest, sessionId: string) {.gcsafe.} =
-  ## Handle SSE streaming mode
+  ## Handle Streamable HTTP mode (MCP specification)
   var headers = corsHeadersFor("POST, GET, OPTIONS")
-  headers["Content-Type"] = "text/event-stream"
+  headers["Content-Type"] = "application/json"
   headers["Cache-Control"] = "no-cache"
-  headers["Connection"] = "keep-alive"
-  headers["Transfer-Encoding"] = "chunked"
   
   if sessionId != "":
     headers["Mcp-Session-Id"] = sessionId
   
   # Handle the request with transport access
   let capabilities = {tcEvents, tcUnicast}
-  let mcpTransport = McpTransport(kind: tkHttp, capabilities: capabilities, httpData: HttpTransportData(
-    port: transport.base.port, host: transport.base.host, authConfig: cast[pointer](addr transport.base.authConfig)))
+  let mcpTransport = McpTransport(kind: tkHttp, capabilities: capabilities, httpTransport: cast[pointer](transport))
   let response = server.handleRequest(mcpTransport, jsonRpcRequest)
   
-  # Send response as SSE event if not a notification
+  # Send regular JSON response (not SSE format) for streamable HTTP
   if response.id.kind != jridString or response.id.str != "":
-    # Use centralized JSON serialization from protocol.nim
-    let responseJsonStr = $response
-    let responseJson = parseJson(responseJsonStr)
-    
-    let eventData = formatSseEvent("message", responseJson, $now().toTime().toUnix())
-    # Note: For proper SSE streaming, we need to send the event data
-    # Since Mummy doesn't provide direct chunk writing, we'll send the entire SSE response
-    request.respond(200, headers, eventData)
+    request.respond(200, headers, $response)
+  else:
+    # For notifications, return 204 No Content
+    request.respond(204, headers, "")
 
 proc handleMcpRequest(transport: MummyTransport, server: McpServer, request: Request) {.gcsafe.} =
   var headers = corsHeadersFor("POST, GET, OPTIONS")

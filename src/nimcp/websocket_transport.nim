@@ -63,6 +63,14 @@ proc newWebSocketTransport*(port: int = 8080, host: string = "127.0.0.1", authCo
   )
   return transport
 
+# Forward declaration for the event sending function
+proc sendEventToWebSocketClients(transport: WebSocketTransport, eventType: string, data: JsonNode, target: string = "") {.gcsafe.}
+
+proc wsEventWrapper(transportPtr: pointer, eventType: string, data: JsonNode, target: string = "") {.gcsafe.} =
+  ## Wrapper function for WebSocket event sending that matches function pointer signature
+  let transport = cast[WebSocketTransport](transportPtr)
+  transport.sendEventToWebSocketClients(eventType, data, target)
+
 
 
 
@@ -84,8 +92,8 @@ proc handleJsonRpcMessage(transport: WebSocketTransport, server: McpServer, webs
     
     # Handle requests that expect responses with transport access
     let capabilities = {tcBidirectional, tcUnicast, tcEvents}  # WebSocket supports bidirectional real-time events
-    let mcpTransport = McpTransport(kind: tkWebSocket, capabilities: capabilities, wsData: WebSocketTransportData(
-      port: transport.base.port, host: transport.base.host, authConfig: cast[pointer](addr transport.base.authConfig)))
+    let mcpTransport = McpTransport(kind: tkWebSocket, capabilities: capabilities,
+      wsTransport: cast[pointer](transport), wsSendEvent: wsEventWrapper)
     let response = server.handleRequest(mcpTransport, jsonRpcRequest)
     
     # Send response back through WebSocket
@@ -182,9 +190,29 @@ proc setupRoutes(transport: WebSocketTransport, server: McpServer) =
     request.respond(204, headers, "")
   )
 
+proc sendEventToWebSocketClients(transport: WebSocketTransport, eventType: string, data: JsonNode, target: string = "") {.gcsafe.} =
+  ## Send MCP notification to all WebSocket clients
+  let notification = %*{
+    "jsonrpc": "2.0",
+    "method": "notifications/message",
+    "params": %*{
+      "type": eventType,
+      "data": data
+    }
+  }
+  
+  # Send to all WebSocket connections
+  for connection in transport.connectionPool.connections():
+    try:
+      connection.websocket.send($notification)
+    except:
+      discard  # Connection might be closed
+
+
 proc serve*(transport: WebSocketTransport, server: McpServer) =
   ## Serve the WebSocket server
   transport.setupRoutes(server)
+  
   
   # Create server with WebSocket handler
   let wsHandler = proc(websocket: WebSocket, event: WebSocketEvent, message: Message) {.gcsafe.} =
@@ -196,6 +224,7 @@ proc shutdown*(transport: WebSocketTransport) =
   ## Shutdown the WebSocket server and close all connections
   if transport.base.httpServer != nil:
     transport.base.httpServer.close()
+  
   
   # Close all active WebSocket connections
   for connection in transport.connectionPool.connections():

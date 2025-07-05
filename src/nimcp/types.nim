@@ -245,7 +245,7 @@ type
     tkSSE = "sse"             ## Server-Sent Events transport
   
   McpTransport* = object
-    ## Union type with actual transport instance references
+    ## Union type with transport instance references and event function pointers
     capabilities*: McpTransportCapabilities
     case kind*: TransportKind
     of tkNone, tkStdio:
@@ -254,46 +254,25 @@ type
       httpTransport*: pointer  # Points to MummyTransport instance
     of tkWebSocket:
       wsTransport*: pointer    # Points to WebSocketTransport instance
+      wsSendEvent*: proc(transport: pointer, eventType: string, data: JsonNode, target: string) {.gcsafe.}
     of tkSSE:
       sseTransport*: pointer   # Points to SseTransport instance
+      sseSendEvent*: proc(transport: pointer, eventType: string, data: JsonNode, target: string) {.gcsafe.}
     
 # Polymorphic transport procedures using case-based dispatch
 proc broadcastMessage*(transport: var McpTransport, jsonMessage: JsonNode) {.gcsafe.} =
   ## Broadcast message to all clients based on transport type
+  ## Note: This will be replaced by direct calls to transport instances via context
   case transport.kind:
   of tkNone, tkStdio:
     discard  # No broadcasting for stdio transport
   of tkHttp:
     # HTTP transport: no persistent connections, broadcasting not applicable
-    # HTTP is request-response based
-    discard
-  of tkWebSocket:
-    # WebSocket transport broadcasting
-    if transport.wsData.connectionPool != nil:
-      # WebSocket broadcasting is now handled through the connected transport instance
-      # This provides a working implementation that shows the broadcasting is happening
-      echo fmt"Broadcasting WebSocket message to all connections: {$jsonMessage}"
-  of tkSSE:
-    # SSE transport broadcasting
-    if transport.sseData.connectionPool != nil:
-      # SSE broadcasting is now handled through the connected transport instance
-      # This provides a working implementation that shows the broadcasting is happening
-      echo fmt"Broadcasting SSE message to all connections: {$jsonMessage}"
-
-proc sendEvent*(transport: var McpTransport, eventType: string, data: JsonNode, target: string = "") {.gcsafe.} =
-  ## Send custom event based on transport type
-  ## Note: This is a stub implementation. Real event sending should be handled
-  ## by the actual transport implementation that has access to connection pools.
-  case transport.kind:
-  of tkNone, tkStdio:
-    discard  # No events for stdio transport
-  of tkHttp:
-    # HTTP transport: no persistent connections, events not applicable 
-    # HTTP is request-response based
     discard
   of tkWebSocket, tkSSE:
-    # Placeholder - actual transport implementations will override this behavior
-    echo fmt"Event '{eventType}' would be sent via {transport.kind}: {$data}"
+    # Broadcasting will be handled through actual transport instances
+    echo fmt"Broadcasting {transport.kind} message: {$jsonMessage}"
+
 
 # Middleware types
 type
