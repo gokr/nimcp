@@ -35,12 +35,12 @@ NimCP now uses direct transport references via Nim object variants with case-swi
 
 All transports support **bidirectional MCP notifications**, with varying capabilities:
 
-#### Server-to-Client Notifications (`ctx.sendEvent`)
+#### Server-to-Client Notifications (`ctx.sendNotification`)
 
-- ✅ **SSE**: Events sent as `notifications/message` via Server-Sent Events stream
-- ✅ **WebSocket**: Events sent as JSON-RPC notifications over WebSocket connection  
-- ⚠️ **HTTP**: Limited event support - only works with active streaming connections (SSE mode)
-- ✅ **stdio**: Events sent as JSON-RPC notifications to stdout
+- ✅ **SSE**: Notifications sent as `notifications/message` via Server-Sent Events stream
+- ✅ **WebSocket**: Notifications sent as JSON-RPC notifications over WebSocket connection  
+- ⚠️ **HTTP**: Limited notification support - only works with active streaming connections (SSE mode)
+- ✅ **stdio**: Notifications sent as JSON-RPC notifications to stdout
 
 #### Client-to-Server Notifications (New!)
 
@@ -60,19 +60,19 @@ server.registerNotification("client/hello", proc(params: JsonNode) =
 server.registerNotificationWithContext("client/ping", proc(ctx: McpRequestContext, params: JsonNode) =
   echo "Client ping from ", ctx.transport.kind, ": ", params
   # Can send response notifications back
-  ctx.sendEvent("server/pong", %*{"timestamp": now()})
+  ctx.sendNotification("server/pong", %*{"timestamp": now()})
 )
 ```
 
-#### HTTP Transport Event Limitations
+#### HTTP Transport Notification Limitations
 
-HTTP transport has **limited event support** because it lacks persistent connections:
+HTTP transport has **limited notification support** because it lacks persistent connections:
 
-- **Regular HTTP mode**: Events are ignored (no persistent connection)
-- **Streaming HTTP mode**: Events sent to active SSE streaming connections
-- **Use case**: HTTP events work best when client uses `Accept: text/event-stream` header
+- **Regular HTTP mode**: Notifications are ignored (no persistent connection)
+- **Streaming HTTP mode**: Notifications sent to active SSE streaming connections
+- **Use case**: HTTP notifications work best when client uses `Accept: text/event-stream` header
 
-For full event support, prefer SSE or WebSocket transports over plain HTTP.
+For full notification support, prefer SSE or WebSocket transports over plain HTTP.
 
 ### Testing Status
 

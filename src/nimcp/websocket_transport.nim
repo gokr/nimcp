@@ -63,13 +63,13 @@ proc newWebSocketTransport*(port: int = 8080, host: string = "127.0.0.1", authCo
   )
   return transport
 
-# Forward declaration for the event sending function
-proc sendEventToWebSocketClients(transport: WebSocketTransport, eventType: string, data: JsonNode, target: string = "") {.gcsafe.}
+# Forward declaration for the notification sending function
+proc sendNotificationToWebSocketClients(transport: WebSocketTransport, notificationType: string, data: JsonNode, target: string = "") {.gcsafe.}
 
-proc wsEventWrapper(transportPtr: pointer, eventType: string, data: JsonNode, target: string = "") {.gcsafe.} =
-  ## Wrapper function for WebSocket event sending that matches function pointer signature
+proc wsNotificationWrapper(transportPtr: pointer, notificationType: string, data: JsonNode, target: string = "") {.gcsafe.} =
+  ## Wrapper function for WebSocket notification sending that matches function pointer signature
   let transport = cast[WebSocketTransport](transportPtr)
-  transport.sendEventToWebSocketClients(eventType, data, target)
+  transport.sendNotificationToWebSocketClients(notificationType, data, target)
 
 
 
@@ -89,14 +89,14 @@ proc handleJsonRpcMessage(transport: WebSocketTransport, server: McpServer, webs
     if jsonRpcRequest.id.isNone:
       let capabilities = {tcBidirectional, tcUnicast, tcEvents}
       let mcpTransport = McpTransport(kind: tkWebSocket, capabilities: capabilities,
-        wsTransport: cast[pointer](transport), wsSendEvent: wsEventWrapper)
+        wsTransport: cast[pointer](transport), wsSendNotification: wsNotificationWrapper)
       server.handleNotification(mcpTransport, jsonRpcRequest)
       return
     
     # Handle requests that expect responses with transport access
     let capabilities = {tcBidirectional, tcUnicast, tcEvents}  # WebSocket supports bidirectional real-time events
     let mcpTransport = McpTransport(kind: tkWebSocket, capabilities: capabilities,
-      wsTransport: cast[pointer](transport), wsSendEvent: wsEventWrapper)
+      wsTransport: cast[pointer](transport), wsSendNotification: wsNotificationWrapper)
     let response = server.handleRequest(mcpTransport, jsonRpcRequest)
     
     # Send response back through WebSocket
@@ -193,13 +193,13 @@ proc setupRoutes(transport: WebSocketTransport, server: McpServer) =
     request.respond(204, headers, "")
   )
 
-proc sendEventToWebSocketClients(transport: WebSocketTransport, eventType: string, data: JsonNode, target: string = "") {.gcsafe.} =
+proc sendNotificationToWebSocketClients(transport: WebSocketTransport, notificationType: string, data: JsonNode, target: string = "") {.gcsafe.} =
   ## Send MCP notification to all WebSocket clients
   let notification = %*{
     "jsonrpc": "2.0",
     "method": "notifications/message",
     "params": %*{
-      "type": eventType,
+      "type": notificationType,
       "data": data
     }
   }

@@ -21,7 +21,7 @@ let server = mcpServer("notifications-demo", "1.0.0"):
         }
         
         # Send notification to client via ctx
-        ctx.sendEvent("notification", eventData)
+        ctx.sendNotification("notification", eventData)
         sleep(500)
       
       return fmt"Sent {count} notifications: '{message}'"
@@ -36,7 +36,7 @@ let server = mcpServer("notifications-demo", "1.0.0"):
       for step in 1..steps:
         sleep(800)
         # Progress event would be sent here in real implementation
-        # ctx.sendEvent("progress", %*{"step": step, "total": steps})
+        # ctx.sendNotification("progress", %*{"step": step, "total": steps})
       
       return fmt"Task completed with {steps} steps"
 

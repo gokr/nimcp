@@ -254,13 +254,13 @@ type
       discard  # No additional data needed
     of tkHttp:
       httpTransport*: pointer  # Points to MummyTransport instance
-      httpSendEvent*: proc(transport: pointer, eventType: string, data: JsonNode, target: string) {.gcsafe.}
+      httpSendNotification*: proc(transport: pointer, notificationType: string, data: JsonNode, target: string) {.gcsafe.}
     of tkWebSocket:
       wsTransport*: pointer    # Points to WebSocketTransport instance
-      wsSendEvent*: proc(transport: pointer, eventType: string, data: JsonNode, target: string) {.gcsafe.}
+      wsSendNotification*: proc(transport: pointer, notificationType: string, data: JsonNode, target: string) {.gcsafe.}
     of tkSSE:
       sseTransport*: pointer   # Points to SseTransport instance
-      sseSendEvent*: proc(transport: pointer, eventType: string, data: JsonNode, target: string) {.gcsafe.}
+      sseSendNotification*: proc(transport: pointer, notificationType: string, data: JsonNode, target: string) {.gcsafe.}
     
 # Polymorphic transport procedures using case-based dispatch
 proc broadcastMessage*(transport: var McpTransport, jsonMessage: JsonNode) {.gcsafe.} =

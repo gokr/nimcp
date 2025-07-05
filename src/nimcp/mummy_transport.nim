@@ -66,13 +66,13 @@ type
     base*: HttpServerBase
     connections*: Table[string, Request]  # Active streaming connections
 
-# Forward declaration for the event sending function
-proc sendEventToHttpClients(transport: MummyTransport, eventType: string, data: JsonNode, target: string = "") {.gcsafe.}
+# Forward declaration for the notification sending function
+proc sendNotificationToHttpClients(transport: MummyTransport, notificationType: string, data: JsonNode, target: string = "") {.gcsafe.}
 
-proc httpEventWrapper(transportPtr: pointer, eventType: string, data: JsonNode, target: string = "") {.gcsafe.} =
-  ## Wrapper function for HTTP event sending that matches function pointer signature
+proc httpNotificationWrapper(transportPtr: pointer, notificationType: string, data: JsonNode, target: string = "") {.gcsafe.} =
+  ## Wrapper function for HTTP notification sending that matches function pointer signature
   let transport = cast[MummyTransport](transportPtr)
-  transport.sendEventToHttpClients(eventType, data, target)
+  transport.sendNotificationToHttpClients(notificationType, data, target)
 
 proc newMummyTransport*(port: int = 8080, host: string = "127.0.0.1", authConfig: AuthConfig = newAuthConfig(), allowedOrigins: seq[string] = @[]): MummyTransport =
   var transport = MummyTransport(
@@ -113,7 +113,7 @@ proc handleJsonRequest(transport: MummyTransport, server: McpServer, request: Re
   # Use the existing server's request handler with transport access
   let capabilities = {tcEvents, tcUnicast}
   let mcpTransport = McpTransport(kind: tkHttp, capabilities: capabilities, 
-    httpTransport: cast[pointer](transport), httpSendEvent: httpEventWrapper)
+    httpTransport: cast[pointer](transport), httpSendNotification: httpNotificationWrapper)
   let response = server.handleRequest(mcpTransport, jsonRpcRequest)
   
   # Only send a response if it's not empty (i.e., not a notification)
@@ -136,7 +136,7 @@ proc handleStreamingRequest(transport: MummyTransport, server: McpServer, reques
   # Handle the request with transport access
   let capabilities = {tcEvents, tcUnicast}
   let mcpTransport = McpTransport(kind: tkHttp, capabilities: capabilities, 
-    httpTransport: cast[pointer](transport), httpSendEvent: httpEventWrapper)
+    httpTransport: cast[pointer](transport), httpSendNotification: httpNotificationWrapper)
   let response = server.handleRequest(mcpTransport, jsonRpcRequest)
   
   # Send regular JSON response (not SSE format) for streamable HTTP
@@ -226,19 +226,19 @@ proc handleMcpRequest(transport: MummyTransport, server: McpServer, request: Req
     else:
       request.respond(405, headers, "Method not allowed")
 
-proc sendEventToHttpClients(transport: MummyTransport, eventType: string, data: JsonNode, target: string = "") {.gcsafe.} =
+proc sendNotificationToHttpClients(transport: MummyTransport, notificationType: string, data: JsonNode, target: string = "") {.gcsafe.} =
   ## Send MCP notification to all active HTTP streaming connections
-  ## Note: HTTP transport has limited event support - only works with active streaming connections
+  ## Note: HTTP transport has limited notification support - only works with active streaming connections
   
   if transport.connections.len == 0:
-    echo fmt"HTTP event ignored (no active streaming connections): {eventType}"
+    echo fmt"HTTP notification ignored (no active streaming connections): {notificationType}"
     return
     
   # Send to all active streaming connections
   for sessionId, request in transport.connections:
     try:
       # Note: This is simplified - real SSE sending would need proper response handling
-      echo fmt"HTTP event sent to session {sessionId}: {eventType} - {data}"
+      echo fmt"HTTP notification sent to session {sessionId}: {notificationType} - {data}"
     except:
       discard  # Connection might be closed
 

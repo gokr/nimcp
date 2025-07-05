@@ -64,20 +64,20 @@ proc cancelRequest*(requestId: string): bool =
 
 
 
-proc sendEvent*(ctx: McpRequestContext, eventType: string, data: JsonNode, target: string = "") =
-  ## Send an event through the transport using function pointers
+proc sendNotification*(ctx: McpRequestContext, notificationType: string, data: JsonNode, target: string = "") =
+  ## Send a notification through the transport using function pointers
   case ctx.transport.kind:
   of tkNone, tkStdio:
-    discard  # No events for stdio transport
+    discard  # No notifications for stdio transport
   of tkHttp:
-    if ctx.transport.httpTransport != nil and ctx.transport.httpSendEvent != nil:
-      ctx.transport.httpSendEvent(ctx.transport.httpTransport, eventType, data, target)
+    if ctx.transport.httpTransport != nil and ctx.transport.httpSendNotification != nil:
+      ctx.transport.httpSendNotification(ctx.transport.httpTransport, notificationType, data, target)
   of tkWebSocket:
-    if ctx.transport.wsTransport != nil and ctx.transport.wsSendEvent != nil:
-      ctx.transport.wsSendEvent(ctx.transport.wsTransport, eventType, data, target)
+    if ctx.transport.wsTransport != nil and ctx.transport.wsSendNotification != nil:
+      ctx.transport.wsSendNotification(ctx.transport.wsTransport, notificationType, data, target)
   of tkSSE:
-    if ctx.transport.sseTransport != nil and ctx.transport.sseSendEvent != nil:
-      ctx.transport.sseSendEvent(ctx.transport.sseTransport, eventType, data, target)
+    if ctx.transport.sseTransport != nil and ctx.transport.sseSendNotification != nil:
+      ctx.transport.sseSendNotification(ctx.transport.sseTransport, notificationType, data, target)
 
 proc broadcastMessage*(ctx: McpRequestContext, jsonMessage: JsonNode) =
   ## Broadcast a message through the transport (transport-agnostic)

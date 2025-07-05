@@ -79,13 +79,13 @@ proc newSseTransport*(port: int = 8080, host: string = "127.0.0.1",
   )
   return transport
 
-# Forward declaration for the event sending function
-proc sendEventToSSEClients(transport: SseTransport, eventType: string, data: JsonNode, target: string = "") {.gcsafe.}
+# Forward declaration for the notification sending function
+proc sendNotificationToSSEClients(transport: SseTransport, notificationType: string, data: JsonNode, target: string = "") {.gcsafe.}
 
-proc sseEventWrapper(transportPtr: pointer, eventType: string, data: JsonNode, target: string = "") {.gcsafe.} =
-  ## Wrapper function for SSE event sending that matches function pointer signature
+proc sseNotificationWrapper(transportPtr: pointer, notificationType: string, data: JsonNode, target: string = "") {.gcsafe.} =
+  ## Wrapper function for SSE notification sending that matches function pointer signature
   let transport = cast[SseTransport](transportPtr)
-  transport.sendEventToSSEClients(eventType, data, target)
+  transport.sendNotificationToSSEClients(notificationType, data, target)
 
 proc validateSseAuth(transport: SseTransport, request: Request): tuple[valid: bool, errorMsg: string] =
   ## Validate SSE authentication using shared auth module
@@ -187,7 +187,7 @@ proc setupRoutes(transport: SseTransport, server: McpServer) =
       # Use the existing server's request handler with transport access
       let capabilities = {tcBroadcast, tcUnicast, tcEvents}  # SSE supports broadcasting and events
       let mcpTransport = McpTransport(kind: tkSSE, capabilities: capabilities, 
-        sseTransport: cast[pointer](transport), sseSendEvent: sseEventWrapper)
+        sseTransport: cast[pointer](transport), sseSendNotification: sseNotificationWrapper)
       let response = server.handleRequest(mcpTransport, jsonRpcRequest)
       
       # Send response back via SSE to all connections
@@ -215,13 +215,13 @@ proc setupRoutes(transport: SseTransport, server: McpServer) =
     request.respond(200, headers = headers)
   )
 
-proc sendEventToSSEClients(transport: SseTransport, eventType: string, data: JsonNode, target: string = "") {.gcsafe.} =
+proc sendNotificationToSSEClients(transport: SseTransport, notificationType: string, data: JsonNode, target: string = "") {.gcsafe.} =
   ## Send MCP notification to all SSE clients
   let notification = %*{
     "jsonrpc": "2.0",
     "method": "notifications/message",
     "params": %*{
-      "type": eventType,
+      "type": notificationType,
       "data": data
     }
   }
