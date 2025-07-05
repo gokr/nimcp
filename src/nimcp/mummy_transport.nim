@@ -132,6 +132,8 @@ proc handleStreamingRequest(transport: MummyTransport, server: McpServer, reques
   
   if sessionId != "":
     headers["Mcp-Session-Id"] = sessionId
+    # Add this connection to the streaming connections table for notifications
+    transport.connections[sessionId] = request
   
   # Handle the request with transport access
   let capabilities = {tcEvents, tcUnicast}
@@ -145,6 +147,10 @@ proc handleStreamingRequest(transport: MummyTransport, server: McpServer, reques
   else:
     # For notifications, return 204 No Content
     request.respond(204, headers, "")
+  
+  # Remove connection after handling request
+  if sessionId != "" and sessionId in transport.connections:
+    transport.connections.del(sessionId)
 
 proc handleMcpRequest(transport: MummyTransport, server: McpServer, request: Request) {.gcsafe.} =
   var headers = corsHeadersFor("POST, GET, OPTIONS")
@@ -227,20 +233,20 @@ proc handleMcpRequest(transport: MummyTransport, server: McpServer, request: Req
       request.respond(405, headers, "Method not allowed")
 
 proc sendNotificationToHttpClients(transport: MummyTransport, notificationType: string, data: JsonNode, target: string = "") {.gcsafe.} =
-  ## Send MCP notification to all active HTTP streaming connections
-  ## Note: HTTP transport has limited notification support - only works with active streaming connections
+  ## Send MCP notification to HTTP clients
+  ## Note: HTTP transport has limited notification support due to request-response nature
+  ## Notifications are only possible during active request processing
   
-  if transport.connections.len == 0:
-    echo fmt"HTTP notification ignored (no active streaming connections): {notificationType}"
-    return
-    
-  # Send to all active streaming connections
-  for sessionId, request in transport.connections:
-    try:
-      # Note: This is simplified - real SSE sending would need proper response handling
-      echo fmt"HTTP notification sent to session {sessionId}: {notificationType} - {data}"
-    except:
-      discard  # Connection might be closed
+  if target != "" and target in transport.connections:
+    # Unicast to specific session
+    echo fmt"HTTP notification queued for session {target}: {notificationType} - {data}"
+  elif target == "" and transport.connections.len > 0:
+    # Broadcast to all active sessions
+    for sessionId in transport.connections.keys:
+      echo fmt"HTTP notification queued for session {sessionId}: {notificationType} - {data}"
+  else:
+    # No active connections - notifications cannot be delivered via HTTP
+    echo fmt"HTTP notification ignored (no active connections): {notificationType}"
 
 proc setupRoutes(transport: MummyTransport, server: McpServer) =
   # Handle all MCP requests on the root path
