@@ -26,6 +26,8 @@ type
     prompts*: Table[string, McpPrompt]
     promptHandlers*: Table[string, McpPromptHandler]
     contextAwarePromptHandlers*: Table[string, McpPromptHandlerWithContext]
+    notificationHandlers*: Table[string, McpNotificationHandler]
+    contextAwareNotificationHandlers*: Table[string, McpNotificationHandlerWithContext]
     resourceTemplates*: ResourceTemplateRegistry
     middleware*: seq[McpMiddleware]
     initialized*: bool
@@ -53,6 +55,8 @@ proc newMcpServer*(name: string, version: string): McpServer =
   result.middleware = @[]
   result.resourceTemplates = newResourceTemplateRegistry()
   result.customData = initTable[string, pointer]()
+  result.notificationHandlers = initTable[string, McpNotificationHandler]()
+  result.contextAwareNotificationHandlers = initTable[string, McpNotificationHandlerWithContext]()
   
   # Initialize logging with server-specific component name
   result.logger = newLogger(llInfo)
@@ -216,6 +220,21 @@ proc registerToolWithContext*(server: McpServer, tool: McpTool, handler: McpTool
 
   server.ensureToolsCapability()
 
+proc registerNotification*(server: McpServer, notificationMethod: string, handler: McpNotificationHandler) =
+  ## Register a notification handler for client-initiated notifications.
+  validateRegistration("Notification", notificationMethod)
+  if handler == nil:
+    raise newException(ValueError, "Notification handler cannot be nil")
+
+  server.notificationHandlers[notificationMethod] = handler
+
+proc registerNotificationWithContext*(server: McpServer, notificationMethod: string, handler: McpNotificationHandlerWithContext) =
+  ## Register a context-aware notification handler for client-initiated notifications.
+  validateRegistration("Notification", notificationMethod)
+  if handler == nil:
+    raise newException(ValueError, "Notification handler cannot be nil")
+
+  server.contextAwareNotificationHandlers[notificationMethod] = handler
 
 proc registerResource*(server: McpServer, resource: McpResource, handler: McpResourceHandler) =
   ## Register a resource with its handler function.
@@ -605,9 +624,44 @@ proc handleNotification*(server: McpServer, request: JsonRpcRequest) {.gcsafe.} 
       of "initialized":
         discard
       else:
+        # Check for registered notification handlers
+        let params = request.params.get(newJObject())
+        if request.`method` in server.notificationHandlers:
+          server.notificationHandlers[request.`method`](params)
+        elif request.`method` in server.contextAwareNotificationHandlers:
+          # Create context for context-aware handlers
+          let ctx = server.newMcpRequestContextWithServer(McpTransport(kind: tkNone, capabilities: {}), "")
+          server.contextAwareNotificationHandlers[request.`method`](ctx, params)
+        else:
+          # Unknown notification method - ignore per JSON-RPC spec
+          discard
+  except Exception as e:
+    # Notifications are fire-and-forget, so we only log errors
+    server.logger.error("Error handling notification", 
+      context = {"method": %request.`method`, "error": %e.msg}.toTable)
+
+proc handleNotification*(server: McpServer, transport: McpTransport, request: JsonRpcRequest) {.gcsafe.} =
+  ## Handle notification with transport context for context-aware handlers
+  try:
+    case request.`method`:
+      of "initialized":
         discard
-  except Exception:
-    discard
+      else:
+        # Check for registered notification handlers
+        let params = request.params.get(newJObject())
+        if request.`method` in server.notificationHandlers:
+          server.notificationHandlers[request.`method`](params)
+        elif request.`method` in server.contextAwareNotificationHandlers:
+          # Create context with proper transport access
+          let ctx = server.newMcpRequestContextWithServer(transport, "")
+          server.contextAwareNotificationHandlers[request.`method`](ctx, params)
+        else:
+          # Unknown notification method - ignore per JSON-RPC spec
+          discard
+  except Exception as e:
+    # Notifications are fire-and-forget, so we only log errors
+    server.logger.error("Error handling notification", 
+      context = {"method": %request.`method`, "error": %e.msg}.toTable)
 
 # Middleware processing
 proc processMiddleware(server: McpServer, ctx: McpRequestContext, request: JsonRpcRequest): JsonRpcRequest =

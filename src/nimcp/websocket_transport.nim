@@ -87,7 +87,10 @@ proc handleJsonRpcMessage(transport: WebSocketTransport, server: McpServer, webs
     
     # Handle notifications (no response expected)
     if jsonRpcRequest.id.isNone:
-      server.handleNotification(jsonRpcRequest)
+      let capabilities = {tcBidirectional, tcUnicast, tcEvents}
+      let mcpTransport = McpTransport(kind: tkWebSocket, capabilities: capabilities,
+        wsTransport: cast[pointer](transport), wsSendEvent: wsEventWrapper)
+      server.handleNotification(mcpTransport, jsonRpcRequest)
       return
     
     # Handle requests that expect responses with transport access

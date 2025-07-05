@@ -12,6 +12,7 @@ type
     ## Stdio transport implementation for MCP servers
     taskpool: Taskpool
     stdoutLock: Lock
+    mcpTransport: McpTransport  # Persistent transport object
 
 proc newStdioTransport*(numThreads: int = 0): StdioTransport =
   ## Args:
@@ -20,6 +21,7 @@ proc newStdioTransport*(numThreads: int = 0): StdioTransport =
   let threads = if numThreads > 0: numThreads else: countProcessors()
   result.taskpool = Taskpool.new(numThreads = threads)
   initLock(result.stdoutLock)
+  result.mcpTransport = McpTransport(kind: tkStdio, capabilities: {})
 
 proc safeEcho(transport: StdioTransport, msg: string) =
   ## Thread-safe output handling
@@ -35,7 +37,8 @@ proc processRequestTask[T](transport: ptr StdioTransport, server: ptr T, request
     if request.id.isSome():
       requestId = request.id.get
     if not request.id.isSome():
-      server[].handleNotification(request)
+      # Use persistent transport object for notifications
+      server[].handleNotification(transport[].mcpTransport, request)
     else:
       let response = server[].handleRequest(request)
       transport[].safeEcho($response)

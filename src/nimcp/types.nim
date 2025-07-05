@@ -226,6 +226,8 @@ type
   McpResourceHandler* = proc(uri: string): McpResourceContents {.gcsafe, closure.}
   McpResourceHandlerWithContext* = proc(ctx: McpRequestContext, uri: string): McpResourceContents {.gcsafe, closure.}
   McpPromptHandler* = proc(name: string, args: Table[string, JsonNode]): McpGetPromptResult {.gcsafe, closure.}
+  McpNotificationHandler* = proc(params: JsonNode): void {.gcsafe, closure.}
+  McpNotificationHandlerWithContext* = proc(ctx: McpRequestContext, params: JsonNode): void {.gcsafe, closure.}
   McpPromptHandlerWithContext* = proc(ctx: McpRequestContext, name: string, args: Table[string, JsonNode]): McpGetPromptResult {.gcsafe, closure.}
   
   # Transport interface types for polymorphism
