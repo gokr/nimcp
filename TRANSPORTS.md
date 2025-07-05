@@ -31,14 +31,38 @@ NimCP now uses direct transport references via Nim object variants with case-swi
 
 ## Verified Functionality
 
-### MCP Notifications (ctx.sendEvent)
+### MCP Notifications (Bidirectional)
 
-All transports support `ctx.sendEvent()` for sending MCP notifications, with varying capabilities:
+All transports support **bidirectional MCP notifications**, with varying capabilities:
+
+#### Server-to-Client Notifications (`ctx.sendEvent`)
 
 - ✅ **SSE**: Events sent as `notifications/message` via Server-Sent Events stream
 - ✅ **WebSocket**: Events sent as JSON-RPC notifications over WebSocket connection  
 - ⚠️ **HTTP**: Limited event support - only works with active streaming connections (SSE mode)
 - ✅ **stdio**: Events sent as JSON-RPC notifications to stdout
+
+#### Client-to-Server Notifications (New!)
+
+- ✅ **SSE**: Client sends JSON-RPC notifications via POST to message endpoint
+- ✅ **WebSocket**: Client sends JSON-RPC notifications over WebSocket connection
+- ✅ **HTTP**: Client sends JSON-RPC notifications via POST (within request scope)
+- ✅ **stdio**: Client sends JSON-RPC notifications via stdin
+
+**Registration Example:**
+```nim
+# Regular notification handler
+server.registerNotification("client/hello", proc(params: JsonNode) =
+  echo "Client said hello: ", params
+)
+
+# Context-aware notification handler (can access transport)
+server.registerNotificationWithContext("client/ping", proc(ctx: McpRequestContext, params: JsonNode) =
+  echo "Client ping from ", ctx.transport.kind, ": ", params
+  # Can send response notifications back
+  ctx.sendEvent("server/pong", %*{"timestamp": now()})
+)
+```
 
 #### HTTP Transport Event Limitations
 
