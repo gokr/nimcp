@@ -16,13 +16,12 @@
 ## - **CORS Support**: Handles cross-origin requests for web-based MCP clients
 ## - **Endpoint Configuration**: Customizable SSE and message endpoint paths
 ## - **Error Handling**: Robust error handling with proper JSON-RPC error responses
-## - **Broadcasting**: Ability to broadcast messages to all connected SSE clients
 ##
 ## Communication Flow:
 ## 1. **Client connects** to SSE endpoint (`/sse` by default) to establish event stream
 ## 2. **Server sends** initial endpoint event with message endpoint URL
 ## 3. **Client sends** JSON-RPC requests via HTTP POST to message endpoint (`/messages` by default)
-## 4. **Server responds** by broadcasting JSON-RPC responses via SSE to all connected clients
+## 4. **Server responds** by send JSON-RPC responses via SSE
 ## 5. **HTTP POST** returns 204 No Content (responses are delivered via SSE only)
 ##
 ## Usage:
@@ -42,7 +41,7 @@
 ## The transport automatically handles:
 ## - SSE connection establishment and lifecycle management
 ## - Authentication validation for both SSE and message endpoints
-## - JSON-RPC message parsing and response broadcasting
+## - JSON-RPC message parsing and response
 ## - Connection cleanup on errors or server shutdown
 ## - CORS preflight requests for web-based clients
 ##
@@ -58,6 +57,7 @@ type
     connection*: SSEConnection
     id*: string
     authenticated*: bool
+    sessionId*: string  # Session ID for matching HTTP requests to SSE connections
     
   SseTransport* = ref object
     ## SSE transport implementation for MCP servers
@@ -65,6 +65,9 @@ type
     connectionPool: ConnectionPool[MummySseConnection]
     sseEndpoint*: string
     messageEndpoint*: string
+
+# Thread-local storage for current SSE connection (safe for concurrent requests)
+var currentSSEConnection {.threadvar.}: MummySseConnection
 
 proc newSseTransport*(port: int = 8080, host: string = "127.0.0.1", 
                       authConfig: AuthConfig = newAuthConfig(),
@@ -80,12 +83,15 @@ proc newSseTransport*(port: int = 8080, host: string = "127.0.0.1",
   return transport
 
 # Forward declaration for the notification sending function
-proc sendNotificationToSSEClients(transport: SseTransport, notificationType: string, data: JsonNode, target: string = "") {.gcsafe.}
+proc sendNotification(transport: SseTransport, connection: MummySseConnection, notificationType: string, data: JsonNode) {.gcsafe.}
 
-proc sseNotificationWrapper(transportPtr: pointer, notificationType: string, data: JsonNode, target: string = "") {.gcsafe.} =
+proc sseNotificationWrapper(ctx: McpRequestContext, notificationType: string, data: JsonNode) {.gcsafe.} =
   ## Wrapper function for SSE notification sending that matches function pointer signature
-  let transport = cast[SseTransport](transportPtr)
-  transport.sendNotificationToSSEClients(notificationType, data, target)
+  let transport = cast[SseTransport](ctx.transport.sseTransport)
+  if currentSSEConnection != nil:
+    transport.sendNotification(currentSSEConnection, notificationType, data)
+  else:
+    echo "SSE notification requested but no current connection context"
 
 proc validateSseAuth(transport: SseTransport, request: Request): tuple[valid: bool, errorMsg: string] =
   ## Validate SSE authentication using shared auth module
@@ -113,11 +119,6 @@ proc sendSseMessage(connection: MummySseConnection, jsonMessage: JsonNode, id: s
   ## Send a JSON-RPC message via SSE
   sendEvent(connection, "message", $jsonMessage, id)
 
-proc broadcastSseMessage(transport: SseTransport, jsonMessage: JsonNode) =
-  ## Broadcast a JSON-RPC message to all SSE connections
-  for connection in transport.connectionPool.connections():
-    sendSseMessage(connection, jsonMessage)
-
 proc setupRoutes(transport: SseTransport, server: McpServer) =
   ## Setup SSE and message handling routes
   
@@ -137,17 +138,27 @@ proc setupRoutes(transport: SseTransport, server: McpServer) =
     try:
       let sseConnection = request.respondSSE()
       
+      # Extract session ID from request headers if present
+      let sessionId = if "Mcp-Session-Id" in request.headers:
+                        request.headers["Mcp-Session-Id"]
+                      else:
+                        generateConnectionId()
+      
       # Create and add connection to pool
       let connection = MummySseConnection(
         connection: sseConnection,
         id: generateConnectionId(),
-        authenticated: transport.base.authConfig.enabled
+        authenticated: transport.base.authConfig.enabled,
+        sessionId: sessionId
       )
       transport.connectionPool.addConnection(connection.id, connection)
       
       # Send initial endpoint event with message endpoint URL
       # Per MCP specification, endpoint event data should be plain URL string, not JSON
       sendEvent(connection, "endpoint", transport.messageEndpoint)
+      
+      # Send session ID event so client can use it for HTTP requests
+      sendEvent(connection, "session", sessionId)
       
       # Note: mummy handles the connection lifecycle, no need for manual keep-alive
       
@@ -184,28 +195,50 @@ proc setupRoutes(transport: SseTransport, server: McpServer) =
       # Parse the JSON-RPC request using the existing protocol parser
       let jsonRpcRequest = parseJsonRpcMessage(request.body)
       
+      # Find the SSE connection for this request based on session ID
+      let sessionId = if "Mcp-Session-Id" in request.headers:
+                        request.headers["Mcp-Session-Id"]
+                      else:
+                        ""
+      
+      # Set thread-local connection context if we have a session ID
+      currentSSEConnection = nil
+      if sessionId != "":
+        for connection in transport.connectionPool.connections():
+          if connection.sessionId == sessionId:
+            currentSSEConnection = connection
+            break
+      else:
+        # If no session ID provided, use the first (and likely only) connection
+        # This is a fallback for simple single-client scenarios
+        for connection in transport.connectionPool.connections():
+          currentSSEConnection = connection
+          break  # Use the first connection found
+      
       # Use the existing server's request handler with transport access
-      let capabilities = {tcBroadcast, tcUnicast, tcEvents}  # SSE supports broadcasting and events
+      let capabilities = {tcUnicast, tcEvents}  # SSE supports unicast and events
       let mcpTransport = McpTransport(kind: tkSSE, capabilities: capabilities, 
         sseTransport: cast[pointer](transport), sseSendNotification: sseNotificationWrapper)
       let response = server.handleRequest(mcpTransport, jsonRpcRequest)
       
-      # Send response back via SSE to all connections
-      # Per MCP specification, tool responses should only be sent via SSE events
-      broadcastSseMessage(transport, parseJson($response))
+      # Send response back via SSE to the specific connection
+      if currentSSEConnection != nil:
+        sendSseMessage(currentSSEConnection, parseJson($response))
       
       # Return HTTP 204 No Content (no response body per MCP specification)
       request.respond(204, headers = corsHeaders)
       
     except JsonParsingError:
       let errorResponse = createParseError()
-      # Broadcast error via SSE and return 204 No Content
-      broadcastSseMessage(transport, %errorResponse)
+      # Send error via SSE and return 204 No Content
+      if currentSSEConnection != nil:
+        sendSseMessage(currentSSEConnection, %errorResponse)
       request.respond(204, headers = corsHeaders)
     except Exception as e:
       let errorResponse = createInternalError(JsonRpcId(kind: jridString, str: ""), e.msg)
-      # Broadcast error via SSE and return 204 No Content
-      broadcastSseMessage(transport, %errorResponse)
+      # Send error via SSE and return 204 No Content
+      if currentSSEConnection != nil:
+        sendSseMessage(currentSSEConnection, %errorResponse)
       request.respond(204, headers = corsHeaders)
   )
   
@@ -215,8 +248,8 @@ proc setupRoutes(transport: SseTransport, server: McpServer) =
     request.respond(200, headers = headers)
   )
 
-proc sendNotificationToSSEClients(transport: SseTransport, notificationType: string, data: JsonNode, target: string = "") {.gcsafe.} =
-  ## Send MCP notification to all SSE clients
+proc sendNotification(transport: SseTransport, connection: MummySseConnection, notificationType: string, data: JsonNode) {.gcsafe.} =
+  ## Send MCP notification to specific SSE client
   let notification = %*{
     "jsonrpc": "2.0",
     "method": "notifications/message",
@@ -226,9 +259,14 @@ proc sendNotificationToSSEClients(transport: SseTransport, notificationType: str
     }
   }
   
-  # Send to all SSE connections
+  sendSseMessage(connection, notification)
+
+proc sendNotificationToSession*(transport: SseTransport, sessionId: string, notificationType: string, data: JsonNode) {.gcsafe.} =
+  ## Send MCP notification to specific session
   for connection in transport.connectionPool.connections():
-    sendSseMessage(connection, notification)
+    if connection.sessionId == sessionId:
+      transport.sendNotification(connection, notificationType, data)
+      return
 
 proc serve*(transport: SseTransport, server: McpServer) =
   ## Serve the SSE transport server

@@ -100,7 +100,7 @@ mcpTool:
 ```
 
 **When to use Context-Aware Tools:**
-- Server-initiated events (SSE notifications, WebSocket broadcasts)
+- Server-initiated events
 - Access to server configuration or transport-specific features
 - Custom logging or middleware integration
 - Request-specific state management

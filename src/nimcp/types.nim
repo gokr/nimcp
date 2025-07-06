@@ -197,6 +197,7 @@ type
     server*: pointer  # Will be cast to McpServer when needed
     transport*: McpTransport  # Direct transport access for events/notifications
     requestId*: string
+    sessionId*: string  # Session ID for routing notifications to specific clients
     startTime*: DateTime
     cancelled*: bool
     metadata*: Table[string, JsonNode]
@@ -233,7 +234,6 @@ type
   # Transport interface types for polymorphism
   McpTransportCapabilities* = set[TransportCapability]
   TransportCapability* = enum
-    tcBroadcast = "broadcast"     ## Can broadcast messages to all clients
     tcUnicast = "unicast"         ## Can send messages to specific clients  
     tcEvents = "events"           ## Supports custom event types
     tcBidirectional = "bidirectional"  ## Supports client-to-server communication
@@ -254,29 +254,14 @@ type
       discard  # No additional data needed
     of tkHttp:
       httpTransport*: pointer  # Points to MummyTransport instance
-      httpSendNotification*: proc(transport: pointer, notificationType: string, data: JsonNode, target: string) {.gcsafe.}
+      httpSendNotification*: proc(ctx: McpRequestContext, notificationType: string, data: JsonNode) {.gcsafe.}
     of tkWebSocket:
       wsTransport*: pointer    # Points to WebSocketTransport instance
-      wsSendNotification*: proc(transport: pointer, notificationType: string, data: JsonNode, target: string) {.gcsafe.}
+      wsSendNotification*: proc(ctx: McpRequestContext, notificationType: string, data: JsonNode) {.gcsafe.}
     of tkSSE:
       sseTransport*: pointer   # Points to SseTransport instance
-      sseSendNotification*: proc(transport: pointer, notificationType: string, data: JsonNode, target: string) {.gcsafe.}
+      sseSendNotification*: proc(ctx: McpRequestContext, notificationType: string, data: JsonNode) {.gcsafe.}
     
-# Polymorphic transport procedures using case-based dispatch
-proc broadcastMessage*(transport: var McpTransport, jsonMessage: JsonNode) {.gcsafe.} =
-  ## Broadcast message to all clients based on transport type
-  ## Note: This will be replaced by direct calls to transport instances via context
-  case transport.kind:
-  of tkNone, tkStdio:
-    discard  # No broadcasting for stdio transport
-  of tkHttp:
-    # HTTP transport: no persistent connections, broadcasting not applicable
-    discard
-  of tkWebSocket, tkSSE:
-    # Broadcasting will be handled through actual transport instances
-    echo fmt"Broadcasting {transport.kind} message: {$jsonMessage}"
-
-
 # Middleware types
 type
   McpMiddleware* = object

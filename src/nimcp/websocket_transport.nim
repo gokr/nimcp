@@ -14,7 +14,6 @@
 ## - **CORS Support**: Handles cross-origin requests for web-based MCP clients
 ## - **Dual Endpoints**: Supports both WebSocket upgrades and HTTP info requests on the same endpoint
 ## - **Error Handling**: Robust error handling with proper JSON-RPC error responses
-## - **Broadcasting**: Ability to broadcast messages to all connected clients
 ##
 ## Usage:
 ## ```nim
@@ -42,11 +41,16 @@
 import mummy, mummy/routers, json, strutils, strformat, options, tables, locks
 import server, types, protocol
 import auth, connection_pool, cors, http_common
+
+# Thread-local storage for current WebSocket connection (safe for concurrent requests)
+var currentWebSocket {.threadvar.}: WebSocket
+var currentSessionId {.threadvar.}: string
 type
   WebSocketConnection* = ref object
     ## Represents an active WebSocket connection
     websocket*: WebSocket
     id*: string
+    sessionId*: string
     authenticated*: bool
     
   WebSocketTransport* = ref object
@@ -64,12 +68,13 @@ proc newWebSocketTransport*(port: int = 8080, host: string = "127.0.0.1", authCo
   return transport
 
 # Forward declaration for the notification sending function
-proc sendNotificationToWebSocketClients(transport: WebSocketTransport, notificationType: string, data: JsonNode, target: string = "") {.gcsafe.}
+proc sendNotification(transport: WebSocketTransport, websocket: WebSocket, notificationType: string, data: JsonNode) {.gcsafe.}
 
-proc wsNotificationWrapper(transportPtr: pointer, notificationType: string, data: JsonNode, target: string = "") {.gcsafe.} =
+proc wsNotificationWrapper(ctx: McpRequestContext, notificationType: string, data: JsonNode) {.gcsafe.} =
   ## Wrapper function for WebSocket notification sending that matches function pointer signature
-  let transport = cast[WebSocketTransport](transportPtr)
-  transport.sendNotificationToWebSocketClients(notificationType, data, target)
+  let transport = cast[WebSocketTransport](ctx.transport.wsTransport)
+  # Use thread-local WebSocket connection
+  transport.sendNotification(currentWebSocket, notificationType, data)
 
 
 
@@ -77,6 +82,9 @@ proc wsNotificationWrapper(transportPtr: pointer, notificationType: string, data
 proc handleJsonRpcMessage(transport: WebSocketTransport, server: McpServer, websocket: WebSocket, message: string) {.gcsafe.} =
   ## Handle incoming WebSocket JSON-RPC message
   try:
+    # Set thread-local WebSocket connection for notifications
+    currentWebSocket = websocket
+    
     if message.len == 0:
       let errorResponse = createInvalidRequest(details = "Empty message")
       websocket.send($(%errorResponse))
@@ -85,18 +93,17 @@ proc handleJsonRpcMessage(transport: WebSocketTransport, server: McpServer, webs
     # Parse the JSON-RPC request using existing protocol parser
     let jsonRpcRequest = parseJsonRpcMessage(message)
     
+    # Create transport with notification wrapper
+    let capabilities = {tcBidirectional, tcUnicast, tcEvents}  # WebSocket supports bidirectional real-time events
+    let mcpTransport = McpTransport(kind: tkWebSocket, capabilities: capabilities,
+      wsTransport: cast[pointer](transport), wsSendNotification: wsNotificationWrapper)
+    
     # Handle notifications (no response expected)
     if jsonRpcRequest.id.isNone:
-      let capabilities = {tcBidirectional, tcUnicast, tcEvents}
-      let mcpTransport = McpTransport(kind: tkWebSocket, capabilities: capabilities,
-        wsTransport: cast[pointer](transport), wsSendNotification: wsNotificationWrapper)
       server.handleNotification(mcpTransport, jsonRpcRequest)
       return
     
     # Handle requests that expect responses with transport access
-    let capabilities = {tcBidirectional, tcUnicast, tcEvents}  # WebSocket supports bidirectional real-time events
-    let mcpTransport = McpTransport(kind: tkWebSocket, capabilities: capabilities,
-      wsTransport: cast[pointer](transport), wsSendNotification: wsNotificationWrapper)
     let response = server.handleRequest(mcpTransport, jsonRpcRequest)
     
     # Send response back through WebSocket
@@ -116,10 +123,11 @@ proc websocketEventHandler(transport: WebSocketTransport, server: McpServer, web
     let connection = WebSocketConnection(
       websocket: websocket,
       id: generateConnectionId(),
+      sessionId: currentSessionId,  # Use session ID from upgrade handler
       authenticated: true  # Authentication handled during handshake
     )
     transport.connectionPool.addConnection(connection.id, connection)
-    echo fmt"WebSocket connection opened: {connection.id}"
+    echo fmt"WebSocket connection opened: {connection.id}, session: {connection.sessionId}"
     
   of MessageEvent:
     # Handle JSON-RPC message
@@ -152,6 +160,15 @@ proc upgradeHandler(transport: WebSocketTransport, request: Request) {.gcsafe.} 
     headers["Content-Type"] = "text/plain"
     request.respond(errorCode, headers, errorMsg)
     return
+  
+  # Extract session ID from headers
+  let sessionId = if "Mcp-Session-Id" in request.headers:
+    request.headers["Mcp-Session-Id"]
+  else:
+    generateConnectionId()  # Fallback to connection ID as session ID
+  
+  # Store session ID in thread-local variable for OpenEvent
+  currentSessionId = sessionId
   
   # Upgrade to WebSocket - Mummy handles the upgrade internally
   discard request.upgradeToWebSocket()
@@ -193,8 +210,8 @@ proc setupRoutes(transport: WebSocketTransport, server: McpServer) =
     request.respond(204, headers, "")
   )
 
-proc sendNotificationToWebSocketClients(transport: WebSocketTransport, notificationType: string, data: JsonNode, target: string = "") {.gcsafe.} =
-  ## Send MCP notification to all WebSocket clients
+proc sendNotification(transport: WebSocketTransport, websocket: WebSocket, notificationType: string, data: JsonNode) {.gcsafe.} =
+  ## Send MCP notification to specific WebSocket client
   let notification = %*{
     "jsonrpc": "2.0",
     "method": "notifications/message",
@@ -204,12 +221,17 @@ proc sendNotificationToWebSocketClients(transport: WebSocketTransport, notificat
     }
   }
   
-  # Send to all WebSocket connections
+  try:
+    websocket.send($notification)
+  except:
+    discard  # Connection might be closed
+
+proc sendNotificationToSession*(transport: WebSocketTransport, sessionId: string, notificationType: string, data: JsonNode) {.gcsafe.} =
+  ## Send MCP notification to specific session
   for connection in transport.connectionPool.connections():
-    try:
-      connection.websocket.send($notification)
-    except:
-      discard  # Connection might be closed
+    if connection.sessionId == sessionId:
+      transport.sendNotification(connection.websocket, notificationType, data)
+      return
 
 
 proc serve*(transport: WebSocketTransport, server: McpServer) =
@@ -237,15 +259,6 @@ proc shutdown*(transport: WebSocketTransport) =
       discard  # Ignore errors during shutdown
   transport.connectionPool = newConnectionPool[WebSocketConnection]()
 
-
-proc broadcastToAll*(transport: WebSocketTransport, message: string) =
-  ## Broadcast a message to all connected WebSocket clients
-  for connection in transport.connectionPool.connections():
-    try:
-      connection.websocket.send(message)
-    except:
-      # Connection failed, remove it
-      transport.connectionPool.removeConnection(connection.id)
 
 proc getActiveConnectionCount*(transport: WebSocketTransport): int =
   ## Get the number of active WebSocket connections

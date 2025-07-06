@@ -61,18 +61,24 @@
 import mummy, mummy/routers, json, strutils, strformat, options, tables
 import server, types, protocol, auth, cors, http_common
 
+# Thread-local storage for current HTTP request (safe for concurrent requests)
+var currentHTTPRequest {.threadvar.}: Request
+
 type
   MummyTransport* = ref object
     base*: HttpServerBase
     connections*: Table[string, Request]  # Active streaming connections
 
 # Forward declaration for the notification sending function
-proc sendNotificationToHttpClients(transport: MummyTransport, notificationType: string, data: JsonNode, target: string = "") {.gcsafe.}
+proc sendNotification(transport: MummyTransport, request: Request, notificationType: string, data: JsonNode) {.gcsafe.}
 
-proc httpNotificationWrapper(transportPtr: pointer, notificationType: string, data: JsonNode, target: string = "") {.gcsafe.} =
+proc httpNotificationWrapper(ctx: McpRequestContext, notificationType: string, data: JsonNode) {.gcsafe.} =
   ## Wrapper function for HTTP notification sending that matches function pointer signature
-  let transport = cast[MummyTransport](transportPtr)
-  transport.sendNotificationToHttpClients(notificationType, data, target)
+  let transport = cast[MummyTransport](ctx.transport.httpTransport)
+  if currentHTTPRequest != nil:
+    transport.sendNotification(currentHTTPRequest, notificationType, data)
+  else:
+    echo "HTTP notification requested but no current request context"
 
 proc newMummyTransport*(port: int = 8080, host: string = "127.0.0.1", authConfig: AuthConfig = newAuthConfig(), allowedOrigins: seq[string] = @[]): MummyTransport =
   var transport = MummyTransport(
@@ -110,6 +116,9 @@ proc handleJsonRequest(transport: MummyTransport, server: McpServer, request: Re
   if sessionId != "":
     headers["Mcp-Session-Id"] = sessionId
   
+  # Set thread-local request context for notifications
+  currentHTTPRequest = request
+  
   # Use the existing server's request handler with transport access
   let capabilities = {tcEvents, tcUnicast}
   let mcpTransport = McpTransport(kind: tkHttp, capabilities: capabilities, 
@@ -135,22 +144,26 @@ proc handleStreamingRequest(transport: MummyTransport, server: McpServer, reques
     # Add this connection to the streaming connections table for notifications
     transport.connections[sessionId] = request
   
-  # Handle the request with transport access
-  let capabilities = {tcEvents, tcUnicast}
-  let mcpTransport = McpTransport(kind: tkHttp, capabilities: capabilities, 
-    httpTransport: cast[pointer](transport), httpSendNotification: httpNotificationWrapper)
-  let response = server.handleRequest(mcpTransport, jsonRpcRequest)
+  # Set thread-local request context for notifications
+  currentHTTPRequest = request
   
-  # Send regular JSON response (not SSE format) for streamable HTTP
-  if response.id.kind != jridString or response.id.str != "":
-    request.respond(200, headers, $response)
-  else:
-    # For notifications, return 204 No Content
-    request.respond(204, headers, "")
-  
-  # Remove connection after handling request
-  if sessionId != "" and sessionId in transport.connections:
-    transport.connections.del(sessionId)
+  try:
+    # Handle the request with transport access
+    let capabilities = {tcEvents, tcUnicast}
+    let mcpTransport = McpTransport(kind: tkHttp, capabilities: capabilities, 
+      httpTransport: cast[pointer](transport), httpSendNotification: httpNotificationWrapper)
+    let response = server.handleRequest(mcpTransport, jsonRpcRequest)
+    
+    # Send regular JSON response (not SSE format) for streamable HTTP
+    if response.id.kind != jridString or response.id.str != "":
+      request.respond(200, headers, $response)
+    else:
+      # For notifications, return 204 No Content
+      request.respond(204, headers, "")
+  finally:
+    # Remove connection after handling request
+    if sessionId != "" and sessionId in transport.connections:
+      transport.connections.del(sessionId)
 
 proc handleMcpRequest(transport: MummyTransport, server: McpServer, request: Request) {.gcsafe.} =
   var headers = corsHeadersFor("POST, GET, OPTIONS")
@@ -232,21 +245,31 @@ proc handleMcpRequest(transport: MummyTransport, server: McpServer, request: Req
     else:
       request.respond(405, headers, "Method not allowed")
 
-proc sendNotificationToHttpClients(transport: MummyTransport, notificationType: string, data: JsonNode, target: string = "") {.gcsafe.} =
-  ## Send MCP notification to HTTP clients
+proc sendNotification(transport: MummyTransport, request: Request, notificationType: string, data: JsonNode) {.gcsafe.} =
+  ## Send MCP notification to HTTP client
   ## Note: HTTP transport has limited notification support due to request-response nature
   ## Notifications are only possible during active request processing
   
-  if target != "" and target in transport.connections:
-    # Unicast to specific session
-    echo fmt"HTTP notification queued for session {target}: {notificationType} - {data}"
-  elif target == "" and transport.connections.len > 0:
-    # Broadcast to all active sessions
-    for sessionId in transport.connections.keys:
-      echo fmt"HTTP notification queued for session {sessionId}: {notificationType} - {data}"
-  else:
-    # No active connections - notifications cannot be delivered via HTTP
-    echo fmt"HTTP notification ignored (no active connections): {notificationType}"
+  # For HTTP transport, notifications are typically sent as part of the response
+  # In this case, we'll just log the notification as HTTP is request-response based
+  echo fmt"HTTP notification for current request: {notificationType} - {data}"
+  
+  # In a real implementation, you might want to:
+  # 1. Queue the notification to be sent with the response
+  # 2. Use WebSocket upgrade for real-time notifications
+  # 3. Use SSE for server-sent events
+  # 4. Send notifications via a separate channel (email, webhook, etc.)
+
+proc sendNotificationToSession*(transport: MummyTransport, sessionId: string, notificationType: string, data: JsonNode) {.gcsafe.} =
+  ## Send MCP notification to specific session
+  ## Note: HTTP transport has limited notification support due to request-response nature
+  ## This method logs the notification as HTTP cannot send real-time notifications
+  echo fmt"HTTP notification for session {sessionId}: {notificationType} - {data}"
+  
+  # In practice, HTTP transport would need:
+  # 1. A persistent connection (WebSocket/SSE)
+  # 2. A notification queue system
+  # 3. Alternative delivery methods (webhooks, email, etc.)
 
 proc setupRoutes(transport: MummyTransport, server: McpServer) =
   # Handle all MCP requests on the root path

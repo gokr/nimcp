@@ -89,3 +89,16 @@ proc serve*[T: ComposedServer | McpServer](transport: StdioTransport, server: T)
     except Exception:
       break
 
+proc sendNotificationToSession*(transport: StdioTransport, sessionId: string, notificationType: string, data: JsonNode) {.gcsafe.} =
+  ## Send MCP notification to session (for Stdio transport, there's only one session)
+  ## The sessionId parameter is ignored as Stdio has only one client
+  let notification = %*{
+    "jsonrpc": "2.0",
+    "method": "notifications/message",
+    "params": %*{
+      "type": notificationType,
+      "data": data
+    }
+  }
+  transport.safeEcho($notification)
+

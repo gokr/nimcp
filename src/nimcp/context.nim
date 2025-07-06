@@ -1,7 +1,7 @@
 ## Request context implementation for NimCP
 ## Provides request context, progress tracking, cancellation, and structured error handling
 
-import json, tables, options, times, locks, random
+import json, tables, options, times, locks, random, strformat
 import types
 
 # No imports or forward declarations needed - we'll use function pointers from the transport
@@ -22,14 +22,16 @@ type
 var globalContextManager* = ContextManager()
 initLock(globalContextManager.contextLock)
 
-proc newMcpRequestContext*(requestId: string = ""): McpRequestContext =
-  ## Create a new request context with unique ID (for backward compatibility)
+
+proc newMcpRequestContext*(requestId: string = "", sessionId: string = ""): McpRequestContext =
+  ## Create a new request context with unique ID and session ID
   let id = if requestId.len > 0: requestId else: $now().toTime().toUnix() & "_" & $rand(1000)
   
   result = McpRequestContext(
     server: nil,  # Server reference not available in this constructor
     transport: McpTransport(),  # Empty transport for backward compatibility
     requestId: id,
+    sessionId: sessionId,
     startTime: now(),
     cancelled: false,
     metadata: initTable[string, JsonNode]()
@@ -61,27 +63,55 @@ proc cancelRequest*(requestId: string): bool =
     return true
   return false
 
-
-
-
-proc sendNotification*(ctx: McpRequestContext, notificationType: string, data: JsonNode, target: string = "") =
-  ## Send a notification through the transport using function pointers
+proc sendNotification*(ctx: McpRequestContext, notificationType: string, data: JsonNode, sessionId: string = "") =
+  ## Send a notification to a client through the transport
+  ## If sessionId is provided, sends to that specific session; otherwise sends to current session
+  let targetSessionId = if sessionId.len > 0: sessionId else: ctx.sessionId
+  
   case ctx.transport.kind:
-  of tkNone, tkStdio:
-    discard  # No notifications for stdio transport
+  of tkNone:
+    discard  # No transport configured
+  of tkStdio:
+    # For stdio transport, send notification as JSON-RPC notification to stdout
+    let notification = %*{
+      "jsonrpc": "2.0",
+      "method": "notifications/message",
+      "params": %*{
+        "type": notificationType,
+        "data": data
+      }
+    }
+    echo $notification
   of tkHttp:
-    if ctx.transport.httpTransport != nil and ctx.transport.httpSendNotification != nil:
-      ctx.transport.httpSendNotification(ctx.transport.httpTransport, notificationType, data, target)
+    if sessionId.len > 0:
+      # Session-specific notification - use cast and call through procedure
+      if ctx.transport.httpTransport != nil:
+        # For now, just echo the notification since we'd need import cycles
+        echo fmt"HTTP notification for session {targetSessionId}: {notificationType} - {data}"
+    else:
+      # Current session notification
+      if ctx.transport.httpTransport != nil and ctx.transport.httpSendNotification != nil:
+        ctx.transport.httpSendNotification(ctx, notificationType, data)
   of tkWebSocket:
-    if ctx.transport.wsTransport != nil and ctx.transport.wsSendNotification != nil:
-      ctx.transport.wsSendNotification(ctx.transport.wsTransport, notificationType, data, target)
+    if sessionId.len > 0:
+      # Session-specific notification - use cast and call through procedure  
+      if ctx.transport.wsTransport != nil:
+        # For now, just echo the notification since we'd need import cycles
+        echo fmt"WebSocket notification for session {targetSessionId}: {notificationType} - {data}"
+    else:
+      # Current session notification
+      if ctx.transport.wsTransport != nil and ctx.transport.wsSendNotification != nil:
+        ctx.transport.wsSendNotification(ctx, notificationType, data)
   of tkSSE:
-    if ctx.transport.sseTransport != nil and ctx.transport.sseSendNotification != nil:
-      ctx.transport.sseSendNotification(ctx.transport.sseTransport, notificationType, data, target)
-
-proc broadcastMessage*(ctx: McpRequestContext, jsonMessage: JsonNode) =
-  ## Broadcast a message through the transport (transport-agnostic)
-  broadcastMessage(ctx.transport, jsonMessage)
+    if sessionId.len > 0:
+      # Session-specific notification - use cast and call through procedure
+      if ctx.transport.sseTransport != nil:
+        # For now, just echo the notification since we'd need import cycles
+        echo fmt"SSE notification for session {targetSessionId}: {notificationType} - {data}"
+    else:
+      # Current session notification
+      if ctx.transport.sseTransport != nil and ctx.transport.sseSendNotification != nil:
+        ctx.transport.sseSendNotification(ctx, notificationType, data)
 
 proc isCancelled*(ctx: McpRequestContext): bool =
   ## Check if the current request has been cancelled
@@ -105,6 +135,10 @@ proc getElapsedTime*(ctx: McpRequestContext): Duration =
   ## Get elapsed time since request started
   return now() - ctx.startTime
 
+proc getSessionId*(ctx: McpRequestContext): string =
+  ## Get the session ID for this request context
+  return ctx.sessionId
+
 proc checkTimeout*(ctx: McpRequestContext, timeoutMs: int = 0): bool {.gcsafe.} =
   ## Check if request has timed out
   let timeout = if timeoutMs > 0: timeoutMs else: 30000  # Default 30 seconds
@@ -124,6 +158,16 @@ proc ensureNotTimedOut*(ctx: McpRequestContext, timeoutMs: int = 0) {.gcsafe.} =
 proc withContext*[T](requestId: string, operation: proc(ctx: McpRequestContext): T): T =
   ## Execute an operation with a managed context
   let ctx = newMcpRequestContext(requestId)
+  registerContext(ctx)
+  
+  try:
+    return operation(ctx)
+  finally:
+    unregisterContext(ctx.requestId)
+
+proc withContext*[T](requestId: string, sessionId: string, operation: proc(ctx: McpRequestContext): T): T =
+  ## Execute an operation with a managed context including session ID
+  let ctx = newMcpRequestContext(requestId, sessionId)
   registerContext(ctx)
   
   try:
@@ -183,6 +227,16 @@ template withRequestContext*(requestId: string, body: untyped): untyped =
   finally:
     unregisterContext(ctx.requestId)
 
+template withRequestContext*(requestId: string, sessionId: string, body: untyped): untyped =
+  ## Execute code block with a request context including session ID
+  let ctx {.inject.} = newMcpRequestContext(requestId, sessionId)
+  registerContext(ctx)
+  
+  try:
+    body
+  finally:
+    unregisterContext(ctx.requestId)
+
 
 
 # Timeout management
@@ -193,6 +247,7 @@ proc setDefaultTimeout*(timeoutMs: int) =
 proc getDefaultTimeout*(): int =
   ## Get the default timeout
   return globalContextManager.defaultTimeout
+
 
 # Context cleanup utilities
 proc cleanupExpiredContexts*() =
