@@ -8,7 +8,7 @@ let server = mcpServer("notifications-demo", "1.0.0"):
   # Context-aware tool that can send notifications
   mcpTool:
     proc sendNotification(ctx: McpRequestContext, message: string = "Hello from MCP!", count: int = 3): string =
-      ## Send a notification event to connected clients
+      ## Send a notification event to the connected client
       ## - message: Message to broadcast
       ## - count: Number of notifications to send
  
@@ -27,7 +27,7 @@ let server = mcpServer("notifications-demo", "1.0.0"):
       return fmt"Sent {count} notifications: '{message}'"
   
   mcpTool:
-    proc progressTask(steps: int): string =
+    proc progressTask(ctx: McpRequestContext, steps: int): string =
       ## Simulate a long-running task with progress updates
       ## - steps: Number of steps to process (1-10)
       if steps <= 0 or steps > 10:
@@ -36,24 +36,27 @@ let server = mcpServer("notifications-demo", "1.0.0"):
       for step in 1..steps:
         sleep(800)
         # Progress event would be sent here in real implementation
-        # ctx.sendNotification("progress", %*{"step": step, "total": steps})
+        ctx.sendNotification("progress", %*{"step": step, "total": steps})
       
       return fmt"Task completed with {steps} steps"
 
 when isMainModule:
   let args = commandLineParams()
-  let transportType = if args.len > 0: args[0] else: "sse"
-  
+  let transportType = if args.len > 0: args[0] else: "stdio"
   case transportType:
+  of "sse":
+    # SSE transport for server-to-client events (default)
+    let transport = newSseTransport(8081, "127.0.0.1")
+    transport.serve(server)
   of "websocket", "ws":
     # WebSocket supports bidirectional real-time communication
-    let transport = newWebSocketTransport(8080, "127.0.0.1")
+    let transport = newWebSocketTransport(8081, "127.0.0.1")
     transport.serve(server)
   of "http":
     # HTTP transport with streaming support
-    let transport = newMummyTransport(8080, "127.0.0.1")
+    let transport = newMummyTransport(8081, "127.0.0.1")
     transport.serve(server)
-  else:
-    # SSE transport for server-to-client events (default)
-    let transport = newSseTransport(8080, "127.0.0.1")
+  of "stdio":
+    # Stdio transport
+    let transport = newStdioTransport()
     transport.serve(server)
