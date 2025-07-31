@@ -198,6 +198,7 @@ type
     transport*: McpTransport  # Direct transport access for events/notifications
     requestId*: string
     sessionId*: string  # Session ID for routing notifications to specific clients
+    progressToken*: Option[JsonNode]  # Progress token for progress notifications
     startTime*: DateTime
     cancelled*: bool
     metadata*: Table[string, JsonNode]

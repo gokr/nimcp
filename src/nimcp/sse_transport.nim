@@ -249,14 +249,54 @@ proc setupRoutes(transport: SseTransport, server: McpServer) =
   )
 
 proc sendNotification(transport: SseTransport, connection: MummySseConnection, notificationType: string, data: JsonNode) {.gcsafe.} =
-  ## Send MCP notification to specific SSE client
+  ## Send MCP notification to specific SSE client using proper MCP format
   let notification = %*{
     "jsonrpc": "2.0",
     "method": "notifications/message",
     "params": %*{
-      "type": notificationType,
-      "data": data
+      "data": data,
+      "level": "info",
+      "logger": "nimcp",
+      "type": notificationType  # Include original type for compatibility
     }
+  }
+  
+  sendSseMessage(connection, notification)
+
+proc sendProgressNotification(transport: SseTransport, connection: MummySseConnection, progressToken: JsonNode, progress: JsonNode, total: JsonNode = nil, message: string = "") {.gcsafe.} =
+  ## Send progress notification according to MCP specification
+  let params = %*{
+    "progress": progress,
+    "progressToken": progressToken
+  }
+  
+  if total != nil:
+    params["total"] = total
+  if message.len > 0:
+    params["message"] = %message
+  
+  let notification = %*{
+    "jsonrpc": "2.0",
+    "method": "notifications/progress",
+    "params": params
+  }
+  
+  sendSseMessage(connection, notification)
+
+proc sendLoggingNotification(transport: SseTransport, connection: MummySseConnection, data: JsonNode, level: string = "info", logger: string = "") {.gcsafe.} =
+  ## Send logging notification according to MCP specification
+  let params = %*{
+    "data": data,
+    "level": level
+  }
+  
+  if logger.len > 0:
+    params["logger"] = %logger
+  
+  let notification = %*{
+    "jsonrpc": "2.0",
+    "method": "notifications/message",
+    "params": params
   }
   
   sendSseMessage(connection, notification)

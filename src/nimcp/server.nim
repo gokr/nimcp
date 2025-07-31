@@ -69,7 +69,7 @@ proc newMcpServer*(name: string, version: string): McpServer =
 
 
 # Server-aware context creation
-proc newMcpRequestContextWithServer*(server: McpServer, transport: McpTransport, requestId: string = ""): McpRequestContext =
+proc newMcpRequestContextWithServer*(server: McpServer, transport: McpTransport, requestId: string = "", progressToken: Option[JsonNode] = none(JsonNode)): McpRequestContext =
   ## Create a new request context with server and transport reference
   let id = if requestId.len > 0: requestId else: $now().toTime().toUnix() & "_" & $rand(1000)
   
@@ -77,6 +77,7 @@ proc newMcpRequestContextWithServer*(server: McpServer, transport: McpTransport,
     server: cast[pointer](server),
     transport: transport,
     requestId: id,
+    progressToken: progressToken,
     startTime: now(),
     cancelled: false,
     metadata: initTable[string, JsonNode]()
@@ -194,6 +195,11 @@ proc ensurePromptsCapability(server: McpServer) =
   if server.capabilities.prompts.isNone:
     server.capabilities.prompts = some(McpPromptsCapability())
 
+proc ensureLoggingCapability(server: McpServer) =
+  ## Ensure logging capability is initialized
+  if server.capabilities.logging.isNone:
+    server.capabilities.logging = some(%*{})
+
 # Registration functions (consolidated with validation)
 proc registerTool*(server: McpServer, tool: McpTool, handler: McpToolHandler) =
   ## Register a tool with its handler function.
@@ -219,6 +225,7 @@ proc registerToolWithContext*(server: McpServer, tool: McpTool, handler: McpTool
     server.contextAwareToolHandlers[tool.name] = handler
 
   server.ensureToolsCapability()
+  server.ensureLoggingCapability()  # Context-aware tools can send notifications
 
 proc registerNotification*(server: McpServer, notificationMethod: string, handler: McpNotificationHandler) =
   ## Register a notification handler for client-initiated notifications.
@@ -764,7 +771,15 @@ proc handleRequest*(server: McpServer, transport: McpTransport, request: JsonRpc
   
   let id = request.id.get
   let requestId = if id.kind == jridString: id.str else: $id.num
-  let ctx = newMcpRequestContextWithServer(server, transport, requestId)
+  
+  # Extract progressToken from request parameters if present
+  var progressToken = none(JsonNode)
+  if request.params.isSome:
+    let params = request.params.get()
+    if params.hasKey("_meta") and params["_meta"].hasKey("progressToken"):
+      progressToken = some(params["_meta"]["progressToken"])
+  
+  let ctx = newMcpRequestContextWithServer(server, transport, requestId, progressToken)
   
   try:
     # Context is available but not automatically registered to avoid GC issues

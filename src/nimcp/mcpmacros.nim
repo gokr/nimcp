@@ -228,6 +228,8 @@ macro mcpTool*(procDef: untyped): untyped =
       wrapperBody,
       nnkProcDef
     )
+    # Add required pragmas for McpToolHandlerWithContext
+    wrapperProc[4] = nnkPragma.newTree(ident("gcsafe"), ident("closure"))
     
     result.add(wrapperProc)
     
@@ -290,6 +292,8 @@ macro mcpTool*(procDef: untyped): untyped =
       wrapperBody,
       nnkProcDef
     )
+    # Add required pragmas for McpToolHandler
+    wrapperProc[4] = nnkPragma.newTree(ident("gcsafe"), ident("closure"))
     
     result.add(wrapperProc)
     
