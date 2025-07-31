@@ -77,41 +77,67 @@ proc sendNotification*(ctx: McpRequestContext, notificationType: string, data: J
       "jsonrpc": "2.0",
       "method": "notifications/message",
       "params": %*{
-        "type": notificationType,
+        "level": "info",
+        "logger": "nimcp-server",
         "data": data
       }
     }
     echo $notification
   of tkHttp:
-    if sessionId.len > 0:
-      # Session-specific notification - use cast and call through procedure
-      if ctx.transport.httpTransport != nil:
-        # For now, just echo the notification since we'd need import cycles
-        echo fmt"HTTP notification for session {targetSessionId}: {notificationType} - {data}"
-    else:
-      # Current session notification
-      if ctx.transport.httpTransport != nil and ctx.transport.httpSendNotification != nil:
-        ctx.transport.httpSendNotification(ctx, notificationType, data)
+    # Current session notification
+    if ctx.transport.httpTransport != nil and ctx.transport.httpSendNotification != nil:
+      ctx.transport.httpSendNotification(ctx, "message", data)
   of tkWebSocket:
-    if sessionId.len > 0:
-      # Session-specific notification - use cast and call through procedure  
-      if ctx.transport.wsTransport != nil:
-        # For now, just echo the notification since we'd need import cycles
-        echo fmt"WebSocket notification for session {targetSessionId}: {notificationType} - {data}"
-    else:
-      # Current session notification
-      if ctx.transport.wsTransport != nil and ctx.transport.wsSendNotification != nil:
-        ctx.transport.wsSendNotification(ctx, notificationType, data)
+    # Current session notification
+    if ctx.transport.wsTransport != nil and ctx.transport.wsSendNotification != nil:
+      ctx.transport.wsSendNotification(ctx, "message", data)
   of tkSSE:
-    if sessionId.len > 0:
-      # Session-specific notification - use cast and call through procedure
-      if ctx.transport.sseTransport != nil:
-        # For now, just echo the notification since we'd need import cycles
-        echo fmt"SSE notification for session {targetSessionId}: {notificationType} - {data}"
-    else:
-      # Current session notification
-      if ctx.transport.sseTransport != nil and ctx.transport.sseSendNotification != nil:
-        ctx.transport.sseSendNotification(ctx, notificationType, data)
+    # Current session notification
+    if ctx.transport.sseTransport != nil and ctx.transport.sseSendNotification != nil:
+      ctx.transport.sseSendNotification(ctx, "message", data)
+
+proc sendProgress*(ctx: McpRequestContext, progress: int, total: int, message: string = "", sessionId: string = "") =
+  ## Send a progress notification using MCP protocol
+  ## Only sends notifications when client explicitly requested them via progressToken
+  
+  # Only send progress notifications if client provided a progressToken
+  if ctx.progressToken == none(JsonNode):
+    return  # Client didn't request progress updates
+    
+  let targetSessionId = if sessionId.len > 0: sessionId else: ctx.sessionId
+  
+  var progressData = %*{
+    "progress": progress,
+    "total": total,
+    "progressToken": ctx.progressToken.get()
+  }
+  
+  if message.len > 0:
+    progressData["message"] = %message
+  
+  case ctx.transport.kind:
+  of tkNone:
+    discard  # No transport configured
+  of tkStdio:
+    # For stdio transport, send progress notification as JSON-RPC notification to stdout
+    let notification = %*{
+      "jsonrpc": "2.0",
+      "method": "notifications/progress",
+      "params": progressData
+    }
+    echo $notification
+  of tkHttp:
+    # Current session progress notification
+    if ctx.transport.httpTransport != nil and ctx.transport.httpSendNotification != nil:
+      ctx.transport.httpSendNotification(ctx, "progress", progressData)
+  of tkWebSocket:
+    # Current session progress notification
+    if ctx.transport.wsTransport != nil and ctx.transport.wsSendNotification != nil:
+      ctx.transport.wsSendNotification(ctx, "progress", progressData)
+  of tkSSE:
+    # Current session progress notification
+    if ctx.transport.sseTransport != nil and ctx.transport.sseSendNotification != nil:
+      ctx.transport.sseSendNotification(ctx, "progress", progressData)
 
 proc isCancelled*(ctx: McpRequestContext): bool =
   ## Check if the current request has been cancelled

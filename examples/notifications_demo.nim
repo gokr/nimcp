@@ -2,7 +2,7 @@
 ## Demonstrates context-aware tools that send events via transport
 
 import ../src/nimcp
-import json, strformat, times, os, taskpools
+import json, strformat, times, os, taskpools, options
 
 var taskpool = Taskpool.new()
 
@@ -32,23 +32,29 @@ let server = mcpServer("notifications-demo", "1.0.0"):
           "total": count
         }
         
-        # Send notification to client via ctx
-        ctx.sendNotification("notification", eventData)
+        # Send notification to client via ctx as logging message
+        ctx.sendNotification("message", eventData)
         sleep(500)
       
       return fmt"Sent {count} notifications: '{message}'"
   
   mcpTool:
     proc progressTask(ctx: McpRequestContext, steps: int): string =
-      ## Simulate a long-running task with progress updates
+      ## Simulate a long-running task with progress updates (takes 5-40 seconds)
+      ## For progress notifications, include progressToken in request _meta field
       ## - steps: Number of steps to process (1-10)
       if steps <= 0 or steps > 10:
         return "Error: Steps must be between 1 and 10"
       
+      # Debug: Check if progressToken is available  
+      let hasToken = ctx.progressToken != none(JsonNode)
+      let tokenStr = if hasToken: $ctx.progressToken.get() else: "none"
+      echo fmt"DEBUG: Progress token available: {hasToken}, value: {tokenStr}"
+      
       for step in 1..steps:
         sleep(800)
-        # Progress event would be sent here in real implementation
-        ctx.sendNotification("progress", %*{"step": step, "total": steps})
+        # Send progress notification using the dedicated sendProgress method
+        ctx.sendProgress(step, steps, fmt"Processing step {step} of {steps}")
       
       return fmt"Task completed with {steps} steps"
 
@@ -62,6 +68,11 @@ let server = mcpServer("notifications-demo", "1.0.0"):
       taskpool.spawn createAlarmWithNotification(alarm, seconds, ctx.sessionId)
       
       return fmt"Alarm will trigger in {seconds} seconds"
+
+  mcpTool:
+    proc HenrySaysHi(): string =
+      ## Talk to Henry and he will say hi      
+      return "Hi! I am Henry"
 
 when isMainModule:
   let args = commandLineParams()
