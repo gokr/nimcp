@@ -11,11 +11,10 @@
 
 - **Macro-driven API** - Define servers, tools, resources, and prompts with simple, declarative syntax
 - **Full MCP 2024-11-05 Support** - Complete implementation of MCP specification with JSON-RPC 2.0
-- **Multiple Transports** - Supports stdio, SSE, HTTP, and WebSocket transports with authentication
+- **Multiple Transports** - Supports stdio, SSE, HTTP, and WebSocket transports
 - **Enhanced Type System** - Support for objects, unions, enums, optional types, and arrays
 - **Automatic Schema Generation** - JSON schemas generated from Nim type signatures
 - **Request Context System** - Progress tracking, cancellation, and request lifecycle management
-- **Structured Error Handling** - Enhanced error types with context propagation and categorization
 - **Resource URI Templates** - Dynamic URI patterns with parameter extraction (`/users/{id}`)
 - **Server Composition** - Compose multiple MCP servers into a single interface with prefixes and routing
 - **Pluggable Logging** - Flexible logging system with multiple handlers, levels, and structured output
@@ -23,7 +22,6 @@
 - **Fluent API** - Method chaining patterns for elegant server configuration
 - **High Performance** - Mummy based HTTP and WebSockets implementation
 - **Concurrent Processing** - Uses the new taskpools library for stdio transport
-- **Comprehensive Testing** - Full test suite covering all features and edge cases
 - **Minimal Dependencies** - Uses only essential, well-maintained packages
 
 ## Quick Start
@@ -38,6 +36,7 @@ nimble install nimcp
 
 ```nim
 import nimcp
+import strformat
 
 let server = mcpServer("my-server", "1.0.0"):
   

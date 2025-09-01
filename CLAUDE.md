@@ -13,7 +13,7 @@ nim c -r examples/basic_calculator.nim  # Compile and run example
 
 ## Architecture
 
-Core: `types.nim` (MCP types), `server.nim` (server separete from transports), `mcpmacros.nim` (macro API), `protocol.nim` (JSON-RPC)
+Core: `types.nim` (MCP types), `server.nim` (server separate from transports), `mcpmacros.nim` (macro API), `protocol.nim` (JSON-RPC)
 
 **Macro API** (recommended) can be seen in @`examples/macro_calculator.nim`
 The macro API automatically extracts:
@@ -29,6 +29,16 @@ Key types: `McpServer`, `McpTool`, `McpResource`, `McpPrompt`, `McpRequestContex
 **Examples**: See `examples/` - calculator variants for each transport
 **Dependencies**: `nim >= 2.2.4`, `mummy`, `taskpools`
 
+## MCP specification
+
+- https://modelcontextprotocol.io/specification/2025-06-18
+
+### Streamable HTTP
+- https://modelcontextprotocol.io/specification/2025-06-18/basic/transports#streamable-http
+- https://www.claudemcp.com/blog/mcp-streamable-http
+- https://mcp-framework.com/docs/Transports/http-stream-transport
+
+
 
 ## Coding Guidelines
 - Do not shadow the local `result` variable (Nim built-in)
@@ -37,7 +47,7 @@ Key types: `McpServer`, `McpTool`, `McpResource`, `McpPrompt`, `McpRequestContex
 - Use `return expression` for early exits
 - Prefer direct field access over getters/setters
 - JSON: Use `%*{}` syntax
-- **NO `asyncdispatch`** - use `taskpools` for concurrency
+- **NO `asyncdispatch`** - use `taskpools` for concurrency or normal threading
 - Remove old code during refactoring
 - Import full modules, not select symbols
 - Use `*` to export fields that should be publicly accessible
@@ -53,25 +63,19 @@ Key types: `McpServer`, `McpTool`, `McpResource`, `McpPrompt`, `McpRequestContex
 - **JSON Object Construction**: Prefer the `%*{}` syntax for clean, readable JSON creation
 - **Content Serialization**: Use centralized utilities for consistent formatting
 - **Error Response Creation**: Use standardized error utilities across all transport layers
-- **Field Validation**: Combine validation with field access for cleaner code
-```nim
-# Preferred: Validation integrated with access
-proc handleToolCall(params: JsonNode): JsonNode =
-  let toolName = requireStringField(params, "name")  # Validates and extracts
-  let arguments = params.getOrDefault("arguments", newJObject())
-
-# Avoid: Separate validation and access steps
-proc handleToolCall(params: JsonNode): JsonNode =
-  if not params.hasKey("name"):
-    raise newException(ValueError, "Missing name field")
-  let toolName = params["name"].getStr()
-```
 
 ## Testing
 
 ### Running Tests
 ```bash
 nimble test           # Run all tests
+```
+
+### Debugging traffic
+
+You can use socat to get a full log of socket traffic:
+```bash
+socat -v tcp-listen:8082,fork tcp:localhost:8081
 ```
 
 ## Context-Aware Tools
@@ -105,8 +109,6 @@ mcpTool:
 - Keep the codebase lean and focused on the current architectural approach
 
 ### Async and Concurrency Guidelines
-- **DO NOT USE `asyncdispatch`** - This project explicitly avoids asyncdispatch for concurrency
-- Use **`taskpools`** for concurrent processing and background tasks
 - Use **synchronous I/O** with taskpools rather than async/await patterns
 - For HTTP/WebSocket transports, use Mummy's built-in async capabilities but avoid introducing asyncdispatch dependencies
 - All concurrent operations should be implemented using taskpools and synchronous patterns for stdio transport

@@ -1,5 +1,5 @@
 # Package
-version       = "0.9.0"
+version       = "0.9.1"
 author        = "Göran Krampe"
 description   = "Easy-to-use Model Context Protocol (MCP) server library for Nim"
 license       = "MIT"
