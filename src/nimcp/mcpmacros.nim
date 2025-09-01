@@ -194,17 +194,17 @@ macro mcpTool*(procDef: untyped): untyped =
             let jsonArgsIdent = ident("jsonArgs")
             case $paramType:
             of "int", "int8", "int16", "int32", "int64":
-              argExtractions.add(newCall("getInt", newCall("[]", jsonArgsIdent, paramNameLit)))
+              argExtractions.add(newCall(bindSym("getInt"), newCall(bindSym("[]"), jsonArgsIdent, paramNameLit)))
             of "uint", "uint8", "uint16", "uint32", "uint64":
-              argExtractions.add(newCall("getInt", newCall("[]", jsonArgsIdent, paramNameLit)))
+              argExtractions.add(newCall(bindSym("getInt"), newCall(bindSym("[]"), jsonArgsIdent, paramNameLit)))
             of "float", "float32", "float64":
-              argExtractions.add(newCall("getFloat", newCall("[]", jsonArgsIdent, paramNameLit)))
+              argExtractions.add(newCall(bindSym("getFloat"), newCall(bindSym("[]"), jsonArgsIdent, paramNameLit)))
             of "string":
-              argExtractions.add(newCall("getStr", newCall("[]", jsonArgsIdent, paramNameLit)))
+              argExtractions.add(newCall(bindSym("getStr"), newCall(bindSym("[]"), jsonArgsIdent, paramNameLit)))
             of "bool":
-              argExtractions.add(newCall("getBool", newCall("[]", jsonArgsIdent, paramNameLit)))
+              argExtractions.add(newCall(bindSym("getBool"), newCall(bindSym("[]"), jsonArgsIdent, paramNameLit)))
             else:
-              argExtractions.add(newCall("getStr", newCall("[]", jsonArgsIdent, paramNameLit)))
+              argExtractions.add(newCall(bindSym("getStr"), newCall(bindSym("[]"), jsonArgsIdent, paramNameLit)))
 
     # Build the function call and wrapper body
     let functionCall = newCall(procName, argExtractions)
@@ -215,7 +215,7 @@ macro mcpTool*(procDef: untyped): untyped =
         nnkExprColonExpr.newTree(
           ident("content"),
           newCall(bindSym("@"), newNimNode(nnkBracket).add(
-            newCall(bindSym("createTextContent"), ident("functionResult"))
+            newCall(bindSym("createTextContent"), newCall(bindSym("$"), ident("functionResult")))
           ))
         )
       )
@@ -258,17 +258,17 @@ macro mcpTool*(procDef: untyped): untyped =
             let jsonArgsIdent = ident("jsonArgs")
             case $paramType:
             of "int", "int8", "int16", "int32", "int64":
-              argExtractions.add(newCall("getInt", newCall("[]", jsonArgsIdent, paramNameLit)))
+              argExtractions.add(newCall(bindSym("getInt"), newCall(bindSym("[]"), jsonArgsIdent, paramNameLit)))
             of "uint", "uint8", "uint16", "uint32", "uint64":
-              argExtractions.add(newCall("getInt", newCall("[]", jsonArgsIdent, paramNameLit)))
+              argExtractions.add(newCall(bindSym("getInt"), newCall(bindSym("[]"), jsonArgsIdent, paramNameLit)))
             of "float", "float32", "float64":
-              argExtractions.add(newCall("getFloat", newCall("[]", jsonArgsIdent, paramNameLit)))
+              argExtractions.add(newCall(bindSym("getFloat"), newCall(bindSym("[]"), jsonArgsIdent, paramNameLit)))
             of "string":
-              argExtractions.add(newCall("getStr", newCall("[]", jsonArgsIdent, paramNameLit)))
+              argExtractions.add(newCall(bindSym("getStr"), newCall(bindSym("[]"), jsonArgsIdent, paramNameLit)))
             of "bool":
-              argExtractions.add(newCall("getBool", newCall("[]", jsonArgsIdent, paramNameLit)))
+              argExtractions.add(newCall(bindSym("getBool"), newCall(bindSym("[]"), jsonArgsIdent, paramNameLit)))
             else:
-              argExtractions.add(newCall("getStr", newCall("[]", jsonArgsIdent, paramNameLit)))
+              argExtractions.add(newCall(bindSym("getStr"), newCall(bindSym("[]"), jsonArgsIdent, paramNameLit)))
 
     # Build the function call and wrapper body
     let functionCall = newCall(procName, argExtractions)
@@ -279,7 +279,7 @@ macro mcpTool*(procDef: untyped): untyped =
         nnkExprColonExpr.newTree(
           ident("content"),
           newCall(bindSym("@"), newNimNode(nnkBracket).add(
-            newCall(bindSym("createTextContent"), ident("functionResult"))
+            newCall(bindSym("createTextContent"), newCall(bindSym("$"), ident("functionResult")))
           ))
         )
       )
