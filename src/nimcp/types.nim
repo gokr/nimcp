@@ -1,6 +1,6 @@
 ## Core MCP protocol types and data structures
 
-import json, tables, options, times, strformat
+import json, tables, options, times
 
 # Constants
 const

@@ -263,7 +263,7 @@ proc sendNotification(transport: SseTransport, connection: MummySseConnection, n
   
   sendSseMessage(connection, notification)
 
-proc sendProgressNotification(transport: SseTransport, connection: MummySseConnection, progressToken: JsonNode, progress: JsonNode, total: JsonNode = nil, message: string = "") {.gcsafe.} =
+proc sendProgressNotification(transport: SseTransport, connection: MummySseConnection, progressToken: JsonNode, progress: JsonNode, total: JsonNode = nil, message: string = "") {.gcsafe, used.} =
   ## Send progress notification according to MCP specification
   let params = %*{
     "progress": progress,
@@ -283,7 +283,7 @@ proc sendProgressNotification(transport: SseTransport, connection: MummySseConne
   
   sendSseMessage(connection, notification)
 
-proc sendLoggingNotification(transport: SseTransport, connection: MummySseConnection, data: JsonNode, level: string = "info", logger: string = "") {.gcsafe.} =
+proc sendLoggingNotification(transport: SseTransport, connection: MummySseConnection, data: JsonNode, level: string = "info", logger: string = "") {.gcsafe, used.} =
   ## Send logging notification according to MCP specification
   let params = %*{
     "data": data,

@@ -1,7 +1,7 @@
 ## Request context implementation for NimCP
 ## Provides request context, progress tracking, cancellation, and structured error handling
 
-import json, tables, options, times, locks, random, strformat
+import json, tables, options, times, locks, random
 import types
 
 # No imports or forward declarations needed - we'll use function pointers from the transport
@@ -65,8 +65,6 @@ proc cancelRequest*(requestId: string): bool =
 
 proc sendNotification*(ctx: McpRequestContext, notificationType: string, data: JsonNode, sessionId: string = "") =
   ## Send a notification to a client through the transport
-  ## If sessionId is provided, sends to that specific session; otherwise sends to current session
-  let targetSessionId = if sessionId.len > 0: sessionId else: ctx.sessionId
   
   case ctx.transport.kind:
   of tkNone:
@@ -103,8 +101,6 @@ proc sendProgress*(ctx: McpRequestContext, progress: int, total: int, message: s
   # Only send progress notifications if client provided a progressToken
   if ctx.progressToken == none(JsonNode):
     return  # Client didn't request progress updates
-    
-  let targetSessionId = if sessionId.len > 0: sessionId else: ctx.sessionId
   
   var progressData = %*{
     "progress": progress,

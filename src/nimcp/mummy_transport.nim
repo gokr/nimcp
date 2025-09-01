@@ -58,7 +58,7 @@
 ## - Session management via custom headers
 ## - Error formatting according to JSON-RPC 2.0 specification
 
-import mummy, mummy/routers, json, strutils, strformat, options, tables, times, random, os
+import mummy, mummy/routers, json, strutils, strformat, options, tables, times, random
 import server, types, protocol, auth, cors, http_common
 
 # Thread-local storage for current HTTP request (safe for concurrent requests)
@@ -82,7 +82,7 @@ proc sendNotification(transport: MummyTransport, sseConnection: SSEConnection, n
 proc writeSSEEvent(sseConnection: SSEConnection, eventType: string, data: string, eventId: string = "") {.gcsafe.}
 proc writeSSENotification(sseConnection: SSEConnection, notification: JsonNode, eventId: string = "") {.gcsafe.}
 proc sendProgressNotification(transport: MummyTransport, sseConnection: SSEConnection, progressToken: JsonNode, progress: JsonNode, total: JsonNode = nil, message: string = "") {.gcsafe.}
-proc sendLoggingNotification(transport: MummyTransport, sseConnection: SSEConnection, data: JsonNode, level: string = "info", logger: string = "") {.gcsafe.}
+proc sendLoggingNotification(transport: MummyTransport, sseConnection: SSEConnection, data: JsonNode, level: string = "info", logger: string = "") {.gcsafe, used.}
 
 proc httpNotificationWrapper(ctx: McpRequestContext, notificationType: string, data: JsonNode) {.gcsafe.} =
   ## Wrapper function for HTTP notification sending that matches function pointer signature
@@ -581,7 +581,7 @@ proc sendProgressNotification(transport: MummyTransport, sseConnection: SSEConne
   writeSSENotification(sseConnection, notification, eventId)
   echo "Progress notification sent via SSE"
 
-proc sendLoggingNotification(transport: MummyTransport, sseConnection: SSEConnection, data: JsonNode, level: string = "info", logger: string = "") {.gcsafe.} =
+proc sendLoggingNotification(transport: MummyTransport, sseConnection: SSEConnection, data: JsonNode, level: string = "info", logger: string = "") {.gcsafe, used.} =
   ## Send logging notification according to MCP specification
   ## Required fields: data, level
   ## Optional field: logger
