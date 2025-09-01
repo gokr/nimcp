@@ -2,7 +2,7 @@
 ## Demonstrates context-aware tools for real-time streaming applications
 
 import ../src/nimcp
-import json, strformat, times, os
+import json, strformat, os
 
 let server = mcpServer("streaming-example", "1.0.0"):
   mcpTool:
