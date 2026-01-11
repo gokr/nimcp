@@ -64,8 +64,8 @@ proc newMcpServer*(name: string, version: string): McpServer =
   result.logger.setupChroniclesLogging()
   
   # Log server initialization
-  result.logger.info("MCP server initialized", 
-    context = {"name": %name, "version": %version}.toTable)
+  #result.logger.info("MCP server initialized", 
+  #  context = {"name": %name, "version": %version}.toTable)
 
 
 # Server-aware context creation
@@ -398,7 +398,6 @@ proc handleToolsList*(server: McpServer): JsonNode {.gcsafe.} =
   withLock toolsLock:
     for tool in server.tools.values:
       tools.add(tool)
-  echo "Handling tools/list for McpServer ", tools
   return createToolsListResponseJson(tools)
 
 template dispatch*[T, U, V, W](server: McpServer, lock: Lock, contextAwareHandlers: Table[string, T], regularHandlers: Table[string, U], key: string, ctx: McpRequestContext, args: V, handlerName: string, extraArgs: W): auto =

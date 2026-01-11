@@ -69,6 +69,7 @@ type
     name*: string
     description*: Option[string]
     inputSchema*: JsonNode
+    outputSchema*: Option[JsonNode]  ## Optional JSON Schema describing tool output format
 
   McpToolCall* = object
     name*: string

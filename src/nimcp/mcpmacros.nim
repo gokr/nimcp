@@ -43,7 +43,7 @@ proc nimTypeToJsonSchema(nimType: NimNode): JsonNode =
 proc extractDocComments(procNode: NimNode): (string, Table[string, string]) =
   var description = ""
   var paramDescriptions = initTable[string, string]()
-  
+
   # Look for doc comments in the proc body (they appear as the first statements)
   let body = procNode[^1]  # Last element is the body
   if body.kind == nnkStmtList and body.len > 0:
@@ -63,8 +63,53 @@ proc extractDocComments(procNode: NimNode): (string, Table[string, string]) =
             # Main description line (first non-empty, non-parameter line)
             description = cleanLine
         break  # Only process the first comment block
-  
+
   return (description, paramDescriptions)
+
+# Extract output schema JSON from ## returns: { ... } blocks
+proc extractOutputSchema(procNode: NimNode): Option[JsonNode] =
+  ## Extract output schema from doc comments in ## returns: { ... } format
+  result = none(JsonNode)
+
+  let body = procNode[^1]  # Last element is the body
+  if body.kind == nnkStmtList and body.len > 0:
+    for stmt in body:
+      if stmt.kind == nnkCommentStmt:
+        let docText = stmt.strVal.strip()
+        let lines = docText.splitLines()
+        var inReturnsBlock = false
+        var jsonLines: seq[string] = @[]
+
+        for line in lines:
+          let trimmed = line.strip()
+          # Check for returns: marker
+          if trimmed.startsWith("## returns:") or trimmed.startsWith("## Returns:"):
+            inReturnsBlock = true
+            # Extract everything after "returns:"
+            let marker = if trimmed.startsWith("## returns:"): "## returns:" else: "## Returns:"
+            let afterMarker = trimmed[marker.len..^1].strip()
+            # Look for opening { to start JSON
+            let bracePos = afterMarker.find('{')
+            if bracePos >= 0:
+              jsonLines.add(afterMarker[bracePos..^1])
+          elif inReturnsBlock and trimmed.startsWith("##"):
+            # Continuation line - add the content after ##
+            let content = trimmed[2..^1].strip()
+            if content.len > 0:
+              jsonLines.add(content)
+          elif inReturnsBlock:
+            # We've reached the end of the returns block
+            break
+
+        # Parse the collected JSON if we found any
+        if jsonLines.len > 0:
+          let jsonStr = jsonLines.join("\n")
+          try:
+            result = some(parseJson(jsonStr))
+          except:
+            # Invalid JSON - skip silently
+            discard
+        break  # Only process the first comment block
 
 # Generate JSON schema from proc parameters with descriptions
 proc generateInputSchema(params: NimNode, paramDescs: Table[string, string]): JsonNode =
@@ -153,22 +198,26 @@ macro mcpTool*(procDef: untyped): untyped =
                       generateInputSchemaSkipFirst(params, paramDescs)
                     else:
                       generateInputSchema(params, paramDescs)
-  
+
+  # Extract output schema from doc comments
+  let outputSchema = extractOutputSchema(actualProcDef)
+
   # Generate the wrapper proc name to avoid conflicts
   let wrapperName = ident("tool_" & toolName & "_wrapper")
-  
+
   # Convert the compile-time schema to a runtime string representation
   let schemaStr = $inputSchema
-  
+
   result = newStmtList()
-  
+
   # Create the tool definition with unique name
   let toolIdent = ident("tool_" & toolName)
   result.add(quote do:
     let `toolIdent` = McpTool(
       name: `toolName`,
       description: some(`finalDescription`),
-      inputSchema: parseJson(`schemaStr`)
+      inputSchema: parseJson(`schemaStr`),
+      outputSchema: `outputSchema`
     )
   )
   
